@@ -1,0 +1,197 @@
+# AI全自动记账Flutter项目规则
+## 项目基础信息
+基于官方flutter create空白项目增量开发，不替换整个工程，保留原有项目文件。
+技术栈：Flutter3.10+ Dart3，Drift本地SQLite数据库，Provider状态管理，Dio网络，fluro路由，fl_chart图表，permission_handler权限，connectivity_plus网络监听。
+项目名称：ai_bill，Mock模式优先，无需后端即可完整运行，可一键切换真实后端。
+
+## 目录强制规范
+lib/
+├── main.dart                 #程序入口
+├── ui_constants.dart         #颜色、尺寸、字体全部写在这里，禁止硬编码色值圆角
+├── core/
+│   ├── dio_client.dart      #dio封装，内置bool mockMode开关，mockMode=true模拟接口返回，不走真实http
+│   └── app_provider.dart    #全局Provider，存放db实例、登录状态、自动记账开关、离线待同步数量
+├── database/
+│   ├── app_database.dart    #drift数据库入口
+│   ├── tables/              #6个.drift表文件
+│   │   ├── offline_sync_queue.drift
+│   │   ├── local_user_config.drift
+│   │   ├── local_accounts.drift
+│   │   ├── local_bills.drift
+│   │   ├── local_liabilities.drift
+│   │   └── local_liability_repays.drift
+│   └── dao/                 #dao层，所有数据库操作走dao，页面禁止直接操作db
+├── utils/                   #工具类：toast、permission、network、hash_util(sha256 sourceHash幂等)
+├── widgets/                 #公共组件：common_empty、common_loading、common_dialog、bill_item、account_selector
+├── pages/
+│   ├── main_tab_page.dart   #底部4tab主框架：首页｜记一笔｜负债台账｜统计
+│   ├── home/
+│   ├── write_bill/
+│   ├── liability/
+│   ├── statistic/
+│   ├── login/
+│   └── setting/
+└── android_channel/         #MethodChannel，对接安卓原生通知监听、短信监听
+
+pubspec.yaml依赖严格按照之前给出版本，不要随意升级大版本。
+drift必须执行dart run build_runner build生成.g.dart文件。
+
+## 业务强制约束（必须严格遵守，不能违背）
+1. 前端**禁止做任何金额、余额、统计数值计算**；统计、收支全部由mock/后端返回，前端只做渲染展示。
+2. 离线同步机制：断网所有写操作写入offline_sync_queue，标记isLocalTemp=1；网络恢复后台自动执行事务同步；同步成功清除标记、删除队列；单条失败保留队列下次重试。
+3. sourceHash：短信、通知、语音、OCR来源全部生成sha256 sourceHash，用于防重复记账。
+4. 负债模块：AI识别到负债信息**只弹窗提示用户确认，绝不自动创建负债记录**。
+5. 转账账单类型不计入收支统计。
+6. 双端差异化：
+   - Android：支持短信监听、通知监听（原生NotificationListenerService + MethodChannel回传dart）
+   - iOS：完全关闭短信/通知采集开关，只展示系统限制提示，不做后台监听逻辑。
+7. OCR图片：只存储图片url，**禁止把图片二进制存入数据库**。
+8. 退出登录/一键清空本地数据：事务清空全部6张数据表。
+9. 数据库全部使用watch流式查询，配合StreamBuilder驱动UI，尽量避免setState。
+10. mockMode=true：全部接口内存模拟返回，不请求网络；mockMode=false访问真实后端；业务代码无需改动。
+11. **禁止硬编码任何业务数据字典**：银行列表、分类列表、负债类型配置、标签、字典选项等所有"可枚举的业务数据"必须存数据库（drift 表）通过 DAO 读取；禁止在 dart 文件里写 `static const List<XXX> allXXX = [...]` 这类硬编码字典。颜色/尺寸/字体常量写 `ui_constants.dart` 不在此限制内（属于 UI 资源）。
+
+## Tab页面功能清单
+Tab1【首页】：本月收支卡片、自动记账状态提示、离线待同步数量提示、待确认账单入口、时间流账单列表；待同步账单显示标记。
+Tab2【记一笔】：手动记账(收入/支出/转账)、语音记账、OCR拍照记账；账户选择、分类、备注、时间。
+Tab3【负债台账】：负债概览卡片；列表（全部/未结清/已结清）；超期高亮；新增/编辑/删除负债；登记还款、还款流水；AI识别弹窗确认。
+Tab4【统计&预算】：日周月年时间筛选；饼图、折线图；消费排行；AI文案展示；月度预算、超支提醒。
+
+## 用户&设置
+登录页面mock手机号登录；游客模式限制自动记账；用户中心弹窗；设置页：自动记账开关、权限跳转、清理缓存、一键清空本地数据。
+
+## Android原生要求
+Dart不能直接监听通知、短信；在android/app原生kotlin写NotificationListenerService、短信广播接收器；MethodChannel把原始文本传给dart层；AndroidManifest注册对应service、权限。
+
+## 开发流程约束
+1. 在官方空白项目基础上增量写代码，不要整体替换项目；每完成一个模块必须保证可编译运行，不要堆代码。
+2. 颜色、圆角、间距全部引用ui_constants，禁止写死数字色值。
+3. 数据库访问全部走dao层，页面不直接import drift表。
+4. 网络请求统一调用DioClient，禁止页面直接new Dio。
+5. 公共UI抽离widgets，不要页面内重复写相同组件。
+
+## UI 颜色主题动态化（必读，绝不能忘）
+新增/修改任何 UI 时，**所有颜色必须跟随主题动态切换**，禁止硬编码。规则如下：
+
+### 基础规则
+1. **禁止硬编码 Color 值**：除 `Colors.white`（在彩色背景上的反白文字/图标）和 `Colors.black.withValues(alpha: ...)`（阴影）以外，禁止写 `Color(0xFF...)`、`Colors.red`、`Colors.grey` 等具体色值。
+2. **统一从 `AppColors` 读取**：`AppColors.primary / primaryLight / primaryDark / background / surface / income / expense / textPrimary / textSecondary / textTertiary / divider`。
+3. **不要给使用 `AppColors` 的 widget 加 `const`**：`const` 会冻结颜色，主题切换时不会刷新。例如 `const Icon(..., color: AppColors.primary)` ❌，应该是 `Icon(..., color: AppColors.primary)` ✅。
+
+### 业务色（分类标签、状态色）写法
+业务标识色（"分期蓝""小贷橙""消费金融紫"等）需要按主题模式区分两套色值，示例：
+
+```dart
+// 根据当前主题选择色值
+final isDark = AppColors.current.isDark;
+final typeColor = isDark
+    ? const Color(0xFF60A5FA)  // 深色主题用更高明度的色值
+    : const Color(0xFF1677FF); // 浅色主题用饱和度高的色值
+```
+
+- 浅色主题（`isDark == false`）：使用 500-700 级别（饱和度高的色值）
+- 深色主题（`isDark == true`）：使用 200-400 级别（更高明度，避免对比度问题）
+
+### 删除/警示色
+禁止使用 `Colors.red`，统一使用 `AppColors.expense`：
+
+```dart
+IconButton(
+  icon: Icon(Icons.delete_outline, color: AppColors.expense),
+  onPressed: ...,
+)
+```
+
+### 主题切换响应原理
+- `AppColors.xxx` 是 getter，每次访问都从 `ThemeManager.instance.current` 读取最新主题。
+- 用户切换主题时，`Consumer<ThemeManager>` 触发整棵树 rebuild，所有 `AppColors.xxx` 自动应用新色值。
+- 因此 **不能加 const**，const 会让颜色在编译期就固定住。
+- 在 `StatefulBuilder` 内部，按 `AppColors.current.isDark` 计算的颜色会在 `setState` 时重新求值，从而响应主题切换。
+
+### 反例 vs 正例
+```dart
+// ❌ 反例：硬编码、const 冻结
+const Color(0xFF1677FF)
+Colors.red
+const Icon(Icons.delete, color: Colors.red)
+
+// ✅ 正例：动态读取
+AppColors.primary
+AppColors.expense
+Icon(Icons.delete, color: AppColors.expense)
+```
+
+## 输出要求
+生成代码时，文件路径严格匹配上面目录；生成单个完整dart文件，不要片段；注释精简，业务逻辑完整；生成drift表时给出完整.drift内容。
+
+## Android Gradle 避坑（历史踩坑记录，必须遵守）
+1. **Kotlin DSL（.kts）只能用 `url = uri("xxx")`，禁止用 Groovy 风格的 `url 'xxx'`。** 修改 `android/build.gradle.kts` 的 maven 镜像时必须使用 `maven { url = uri("https://maven.aliyun.com/repository/google") }`，否则会报 `Unexpected token` 语法错误。
+2. Kotlin 版本必须与 Java 版本匹配：Java 25 → Kotlin 2.0.0+；AGP 8.x → Kotlin 1.9+。
+3. Gradle wrapper 版本与 AGP 版本要匹配：AGP 8.9.0 → Gradle 8.11.1+。
+4. 镜像源同步修改 `buildscript.repositories` 和 `allprojects.repositories` 两处，缺少一处会导致部分依赖走默认 google() 卡死。
+5. 修改任何 .kts/.gradle 后必须重新执行 `flutter clean` 再 `flutter run`，否则可能复用旧的编译缓存继续报错。
+
+## 数据存储规范（必读，绝不能忘）
+
+**所有"可枚举的业务数据"必须存数据库，禁止在 dart 源码里硬编码字典常量。**
+
+### 适用范围
+以下类型的数据**必须**走数据库（drift 表 + DAO）：
+
+| 数据类型 | 表 | 已硬编码的反例 | 修正 |
+|---------|-----|---------------|------|
+| 银行列表 | `local_banks` | `BankData.allBanks = [BankItem(...), ...]`（80+ 行常量） | 数据库表已有 `_initDefaultBanks()` 默认数据，selector 从 `getAllBanks()` 读取 |
+| 信贷机构列表 | `local_credit_institutions` | 类似的 `static const List<XXX> allXXX = []` | 数据库已有初始化 |
+| 消费分类 | `local_categories` | `CategoryData.expense = [...]` / `income = [...]` | `category_provider.dart` 从数据库 `watchAllCategories()` 读取 |
+| 负债类型配置 | `local_liability_types`（如有） | `liabilityTypeConfigs = [LiabilityTypeConfig(...), ...]` | 数据库表 + 默认初始化 + DAO |
+| 账户/资金类型 | `local_accounts` | 写死的"现金/银行卡/支付宝/微信"枚举 | 数据库表已有默认账户 |
+| AI 解析的标签/商户 | `local_merchants` | 字符串字面量列表 | 数据库读取 |
+| 标签、状态枚举、图标字典 | `local_tags` / `local_icons` | `static const Map<String, IconData> iconMap = {}` | 业务标识从数据库，**Material icon name** 走 mapper |
+| 任何"用户可能新增/修改/删除"的字典数据 | 对应业务表 | 任何 `static const List` / `static const Map` | 数据库 |
+
+### 不适用（属于 UI 资源，不是业务数据）
+- `ui_constants.dart` 里的颜色、尺寸、字体、圆角、间距（已经在规则里强制）
+- enum Dart 类（编译期常量，如 `BillType.expense / income / transfer`）
+- 路由路径、key、channel name
+- 错误码、状态码（如果不会被用户修改）
+
+### 实施要求
+1. **新增业务字典**：先在 `database.dart` 定义表 + `_initDefaultXxx()` 写入默认数据 + 在 DAO 区追加 `getAllXxx / searchXxx / insertXxx` 方法，**禁止**先在 widget 里写硬编码常量。
+2. **改造旧硬编码**：如果发现 `static const List<XXX> allXXX = [...]` / `static const Map<String, List<XXX>> xxxByCategory = {}` 这种模式，必须重构为数据库。
+3. **页面/Widget 读取**：通过 `Provider` + `StreamBuilder` 监听 `watchAllXxx()`，或 `FutureBuilder` 读取 `getAllXxx()`。**禁止**直接从某个常量类 import 数据。
+4. **新增/删除**：UI 提供操作入口，调用 `insertXxx` / `deleteXxx` 写数据库；不允许只在内存里 push 一项到本地 list。
+5. **分类/分组用的纯 code 集合**（如 `categoryCodes = {'国有大型银行': ['ICBC', ...]}`）可以保留为静态常量——这只是分组依据，不存数据本身。
+6. **DRIFT 生成**：`flutter pub run build_runner build --delete-conflicting-outputs` 必须执行；不要手动编辑 `.g.dart` 文件。
+
+### 反例 vs 正例
+```dart
+// ❌ 反例：硬编码数据字典
+class BankData {
+  static const List<BankItem> allBanks = [
+    BankItem(name: '工商银行', code: 'ICBC', icon: '🏦', color: '#E53935'),
+    BankItem(name: '农业银行', code: 'ABC', icon: '🏦', color: '#43A047'),
+    // ... 80 行
+  ];
+}
+
+// ✅ 正例：数据库读取
+final db = context.read<AppDatabase>();
+final banks = await db.getAllBanks(); // 返回 List<LocalBanksData>
+
+// 插入新数据
+await db.insertBank(LocalBanksCompanion(
+  bankId: Value('CUSTOM_001'),
+  name: Value('新疆银行'),
+  code: Value('XJB'),
+  icon: Value('🏦'),
+  color: Value('#1677FF'),
+));
+```
+
+### 检查清单（PR / 自查时过一遍）
+- [ ] 没有新增 `static const List<XXX> allXXX = [...]`（业务字典类）
+- [ ] 没有新增 `static const Map<String, List<XXX>> xxxByCategory = {}`（业务字典类）
+- [ ] 任何"列表 + 增删改"的 widget 都接数据库
+- [ ] 搜索走 `LIKE '%keyword%'` SQL，不在内存 `.where()` 过滤
+- [ ] `flutter analyze` 干净
+- [ ] 已执行 `dart run build_runner build` 生成 `.g.dart`

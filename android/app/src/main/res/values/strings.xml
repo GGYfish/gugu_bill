@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_description">
+        记账助手需要此权限来自动检测微信和支付宝的支付成功页面，获取交易金额信息。
+        开启后，记账助手会在您完成支付时自动识别并记录账单，无需手动输入。
+    </string>
+</resources>

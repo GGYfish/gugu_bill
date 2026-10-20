@@ -1,0 +1,111 @@
+# ===== Flutter / Dart / Pub =====
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# 构建产物符号化 / 混淆
+app.*.symbols
+app.*.map.json
+
+# ===== Android / Gradle =====
+/android/app/debug
+/android/app/profile
+/android/app/release
+/android/local.properties
+/android/**/local.properties
+/android/**/GeneratedPluginRegistrant.java
+/android/captures/
+android.key.properties
+**/*.jks
+**/*.keystore
+
+# ===== iOS =====
+**/ios/**/*.mode1v3
+**/ios/**/*.mode2v3
+**/ios/**/*.membership
+**/iosFlutter/.last_build_id
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+
+# ===== 桌面平台构建产物 =====
+/linux/flutter/
+/macos/Flutter/ephemeral/
+/macos/Pods/
+/windows/flutter/
+
+# ===== IDE / 编辑器 =====
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.fleet/
+.atom/
+.history
+*.swp
+*.swo
+
+# ===== 系统文件 =====
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ===== 日志 & 崩溃转储(含用户机器绝对路径,敏感) =====
+*.log
+build_apk_log.txt
+flutter_run.log
+hs_err_pid*.log
+jvm_crash*.log
+
+# ===== Python / 一次性本地脚本 =====
+*.pyc
+__pycache__/
+*.pyo
+fix_credit.py
+migrate_working_dir/
+
+# ===== 通用编译/中间产物 =====
+*.class
+.migrate_working_dir/
+.svn/
+.swiftpm/
+
+# ===== 本地数据库 (Drift / SQLite) =====
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.db
+*.db-journal
+*_sqlite.db
+app_database.db
+app_database.db-journal
+isar.sqlite
+*.drift-snapshot
+.sync/
+
+# ===== Flutter 生成的临时/用户特定文件 =====
+.flutter-plugins
+.flutter-plugins-dependencies
+.fvm/
+.fvmrc.json
+
+# ===== 备份/导出文件(可能含用户数据) =====
+*.bak
+*.backup
+*~
+*.tmp
+*.temp
+
+# ===== 用户特定 / 内部敏感(谨慎评估是否提交) =====
+# Cursor IDE 项目级 AI 规则:包含项目上下文信息,一般建议提交以便团队共享;
+# 若需忽略请取消下行注释
+# .cursorrules

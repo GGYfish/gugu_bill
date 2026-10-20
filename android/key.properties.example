@@ -1,0 +1,29 @@
+# ============================================================
+# Android 签名凭据示例文件 — Android Keystore Credentials
+# ============================================================
+# 用法:
+#   1. 复制本文件为 key.properties(在同一目录下):
+#        cp android/key.properties.example android/key.properties
+#   2. 把下面 4 个字段填上真实值。
+#   3. key.properties 已经被 android/.gitignore 忽略,不会被提交。
+#
+# 字段优先级:
+#   - CI / GitHub Actions / GitLab CI: 推荐通过环境变量注入,
+#     变量名: ANDROID_KEYSTORE_STOREFILE / _STOREPASSWORD / _KEYALIAS / _KEYPASSWORD
+#   - 本地开发:用本文件更方便。
+#   - 没有 release 签名也能跑 flutter run --debug / flutter build apk --debug,
+#     只是 release 包会自动降级为 debug 签名(只能本地自测)。
+# ============================================================
+
+# .jks / .keystore 文件路径(相对 android/ 目录)
+# 举例:release/gugu_release.jks  →  android/release/gugu_release.jks
+storeFile=release/gugu_release.jks
+
+# keystore 库密码
+storePassword=
+
+# key 别名
+keyAlias=
+
+# key 密码(通常与 storePassword 相同)
+keyPassword=

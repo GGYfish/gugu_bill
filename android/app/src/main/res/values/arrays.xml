@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 特殊用途标志，用于前台服务 -->
+    <array name="special_use_flags">
+        <item>special_use</item>
+    </array>
+</resources>
