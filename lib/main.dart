@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'database/database.dart';
-import 'services/network_service.dart';
 import 'providers/app_provider.dart';
 import 'providers/bill_provider.dart';
 import 'providers/category_provider.dart';
@@ -28,32 +27,29 @@ void main() async {
   await ThemeManager.instance.init();
 
   final db = AppDatabase();
-  final network = NetworkService();
-  network.init();
 
-  runApp(MyApp(db: db, network: network));
+  runApp(MyApp(db: db));
 }
 
 class MyApp extends StatelessWidget {
   final AppDatabase db;
-  final NetworkService network;
 
-  const MyApp({super.key, required this.db, required this.network});
+  const MyApp({super.key, required this.db});
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
         Provider<AppDatabase>.value(value: db),
-        ChangeNotifierProvider(create: (_) => AppProvider(db, network)),
+        ChangeNotifierProvider(create: (_) => AppProvider(db)),
         ChangeNotifierProvider(create: (_) {
           final cp = CategoryProvider();
           cp.bind(db);
           return cp;
         }),
         ChangeNotifierProvider(create: (_) => AccountProvider(db)),
-        ChangeNotifierProvider(create: (_) => BillProvider(db, network)),
-        ChangeNotifierProvider(create: (_) => LiabilityProvider(db, network)),
+        ChangeNotifierProvider(create: (_) => BillProvider(db)),
+        ChangeNotifierProvider(create: (_) => LiabilityProvider(db)),
         ChangeNotifierProvider(create: (_) => StatisticsProvider(db)),
         ChangeNotifierProvider(create: (_) => CategoryManagementProvider(db)),
         ChangeNotifierProvider(create: (_) => BankManagementProvider(db)),

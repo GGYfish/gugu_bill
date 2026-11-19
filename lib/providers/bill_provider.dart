@@ -4,18 +4,16 @@ import 'package:flutter/foundation.dart';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 import '../database/database.dart';
-import '../services/network_service.dart';
 
 /// 首页账单列表 Provider
 /// - 列表数据按 50 条/页懒加载（[loadInitial] / [loadMore] / [refresh]）
 /// - 顶部汇总（今日支出 / 本月收支）通过 SQL 聚合独立维护，不依赖分页结果
-/// - 待同步 / 待确认数量由独立 stream 维护
+/// - 待确认数量由独立 stream 维护
 class BillProvider extends ChangeNotifier {
   /// 每页条数（首页流水列表）
   static const int pageSize = 50;
 
   final AppDatabase _db;
-  final NetworkService _network;
 
   // ---- 分页状态 ----
   List<LocalBillsData> _bills = [];
@@ -26,7 +24,6 @@ class BillProvider extends ChangeNotifier {
 
   // ---- 独立维护的计数器（来自 stream）----
   int _totalCount = 0;
-  int _pendingSyncCount = 0;
   int _unconfirmedCount = 0;
 
   // ---- 顶部汇总 ----
@@ -37,7 +34,6 @@ class BillProvider extends ChangeNotifier {
   };
 
   StreamSubscription? _countSub;
-  StreamSubscription? _pendingSub;
   StreamSubscription? _unconfirmedSub;
   StreamSubscription? _summarySub;
 
@@ -50,10 +46,9 @@ class BillProvider extends ChangeNotifier {
   String? get error => _error;
 
   int get totalCount => _totalCount;
-  int get pendingSyncCount => _pendingSyncCount;
   int get unconfirmedCount => _unconfirmedCount;
 
-  BillProvider(this._db, this._network) {
+  BillProvider(this._db) {
     _init();
   }
 
@@ -62,11 +57,6 @@ class BillProvider extends ChangeNotifier {
     _countSub = _db.watchBillsTotalCount().listen((c) {
       _totalCount = c;
       _hasMore = _bills.length < _totalCount;
-      notifyListeners();
-    });
-    // 待同步数量
-    _pendingSub = _db.watchPendingSyncCount().listen((c) {
-      _pendingSyncCount = c;
       notifyListeners();
     });
     // 待确认数量
@@ -87,7 +77,6 @@ class BillProvider extends ChangeNotifier {
   @override
   void dispose() {
     _countSub?.cancel();
-    _pendingSub?.cancel();
     _unconfirmedSub?.cancel();
     _summarySub?.cancel();
     super.dispose();
@@ -171,23 +160,13 @@ class BillProvider extends ChangeNotifier {
         source: Value(source),
         liabilityId: Value(liabilityId),
         confirmStatus: const Value(1),
-        syncStatus: Value(_network.isOnline ? 1 : 0),
+        syncStatus: const Value(0),
       );
 
       // 插入账单
       await _db.insertBill(bill);
       // 注意：负债还款的 repay 记录和 repaidAmount 更新统一由
       // LiabilityProvider.addRepay 处理，禁止在此重复写入（避免双重记账）。
-
-      // 添加离线同步队列（如果断网）
-      if (!_network.isOnline) {
-        await _db.addSyncQueue(OfflineSyncQueueCompanion(
-          syncTableName: const Value('local_bills'),
-          recordId: Value(billId),
-          operation: const Value('insert'),
-          data: Value('{}'),
-        ));
-      }
 
       // 刷新首页列表让新账单展示在头部
       await loadInitial();

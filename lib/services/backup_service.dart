@@ -16,7 +16,7 @@ import 'backup_to_downloads.dart';
 /// 设计要点：
 /// - 导出：保留原始业务 ID（billId / liabilityId / accountId 等）以便完整恢复外键引用；
 /// - 导入：先事务清空业务表，再按"基础表→引用表"的顺序插入，避免外键悬挂；
-/// - 用户配置（mockMode / 自动记账开关 / token 等）不受导入影响，避免登录态被冲掉；
+/// - 用户配置（自动记账开关 / token 等）不受导入影响，避免登录态被冲掉；
 /// - 离线同步队列会被清空，因为导入相当于一次完整快照，无需再同步旧条目。
 class BackupService {
   BackupService(this._db);
@@ -117,8 +117,7 @@ class BackupService {
     int liabs = 0, repays = 0, bills = 0;
 
     await _db.transaction(() async {
-      // 1. 先清空全部业务表 + 同步队列
-      await _db.delete(_db.offlineSyncQueue).go();
+      // 1. 先清空全部业务表
       await _db.delete(_db.localBills).go();
       await _db.delete(_db.localLiabilityRepays).go();
       await _db.delete(_db.localLiabilities).go();

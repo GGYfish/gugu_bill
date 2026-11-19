@@ -420,26 +420,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       centerTitle: true,
       title: Text('记账', style: TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
       actions: [
-        Consumer<AppProvider>(
-          builder: (context, app, _) {
-            return Row(
-              children: [
-                if (!app.isOnline)
-                  Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(12)),
-                    child: const Text('离线', style: TextStyle(color: Colors.white, fontSize: 12)),
-                  ),
-                if (app.pendingSyncCount > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Badge(label: Text('${app.pendingSyncCount}'), child: const Icon(Icons.sync, size: 22)),
-                  ),
-              ],
-            );
-          },
-        ),
         IconButton(
           icon: Icon(Icons.settings_outlined, color: AppColors.textPrimary),
           onPressed: () => Navigator.push(

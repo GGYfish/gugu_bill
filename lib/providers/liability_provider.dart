@@ -5,12 +5,10 @@ import 'package:uuid/uuid.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 import '../database/database.dart';
-import '../services/network_service.dart';
 import '../utils/money.dart';
 
 class LiabilityProvider extends ChangeNotifier {
   final AppDatabase _db;
-  final NetworkService _network;
 
   List<LocalLiabilitiesData> _liabilities = [];
   List<LocalLiabilityRepaysData> _repays = [];
@@ -342,7 +340,7 @@ class LiabilityProvider extends ChangeNotifier {
     return (end.year - start.year) * 12 + (end.month - start.month) + 1;
   }
 
-  LiabilityProvider(this._db, this._network) {
+  LiabilityProvider(this._db) {
     _init();
   }
 
@@ -425,20 +423,11 @@ class LiabilityProvider extends ChangeNotifier {
         firstPaymentDate: Value(firstPaymentDate),
         lastPaymentDate: Value(lastPaymentDate),
         repayDate: Value(repayDate),
-        syncStatus: Value(_network.isOnline ? 1 : 0),
+        syncStatus: const Value(0),
         status: const Value(0),
       );
 
       await _db.insertLiability(liability);
-
-      if (!_network.isOnline) {
-        await _db.addSyncQueue(OfflineSyncQueueCompanion(
-          syncTableName: const Value('local_liabilities'),
-          recordId: Value(liabilityId),
-          operation: const Value('insert'),
-          data: Value('{}'),
-        ));
-      }
       // 数据库监听器会自动更新数据并触发 notifyListeners()
       return true;
     } catch (e) {
@@ -496,7 +485,7 @@ class LiabilityProvider extends ChangeNotifier {
         accountId: Value(accountId),
         repayTime: Value(actualRepayTime),
         remark: Value(remark),
-        syncStatus: Value(_network.isOnline ? 1 : 0),
+        syncStatus: const Value(0),
       ));
 
       // 同时写入账单（负债还款 → 支出账单）
@@ -514,7 +503,7 @@ class LiabilityProvider extends ChangeNotifier {
         source: const Value('liability_repay'),
         liabilityId: Value(liabilityId),
         remark: Value(remark ?? '还款'),
-        syncStatus: Value(_network.isOnline ? 1 : 0),
+        syncStatus: const Value(0),
         confirmStatus: const Value(1),
       ));
 

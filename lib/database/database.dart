@@ -9,20 +9,6 @@ import '../utils/money.dart';
 
 part 'database.g.dart';
 
-// 离线同步队列
-@DataClassName('OfflineSyncQueueData')
-class OfflineSyncQueue extends Table {
-  IntColumn get id => integer().autoIncrement()();
-  TextColumn get syncTableName => text()();
-  TextColumn get recordId => text()();
-  TextColumn get operation => text()();
-  TextColumn get data => text()();
-  IntColumn get status => integer().withDefault(const Constant(0))();
-  IntColumn get retryCount => integer().withDefault(const Constant(0))();
-  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
-  DateTimeColumn get syncedAt => dateTime().nullable()();
-}
-
 // 用户配置表
 @DataClassName('LocalUserConfigData')
 class LocalUserConfig extends Table {
@@ -30,7 +16,8 @@ class LocalUserConfig extends Table {
   TextColumn get userId => text().nullable()();
   TextColumn get phone => text().nullable()();
   TextColumn get token => text().nullable()();
-  BoolColumn get mockMode => boolean().withDefault(const Constant(true))();
+  /// 历史字段：Mock 模式已移除，列保留以免破坏老库升级
+  BoolColumn get mockMode => boolean().withDefault(const Constant(false))();
   // 通知栏自动记账开关
   BoolColumn get notificationAutoRecordEnabled => boolean().withDefault(const Constant(false))();
   // 无障碍自动记账开关
@@ -197,7 +184,6 @@ class LocalAiChatMessages extends Table {
 }
 
 @DriftDatabase(tables: [
-  OfflineSyncQueue,
   LocalUserConfig,
   LocalAccounts,
   LocalBills,
@@ -212,7 +198,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration {
@@ -306,6 +292,10 @@ class AppDatabase extends _$AppDatabase {
             'ai_appellation',
             "TEXT NOT NULL DEFAULT ''",
           );
+        }
+        if (from < 12) {
+          // 去掉离线同步队列：数据本身就在本地库
+          await customStatement('DROP TABLE IF EXISTS offline_sync_queue');
         }
 
         // 确保分类数据存在（通用初始化逻辑）
@@ -833,25 +823,6 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  Future<List<OfflineSyncQueueData>> getPendingSyncItems() {
-    return (select(offlineSyncQueue)
-          ..where((t) => t.status.equals(0) | t.status.equals(3))
-          ..orderBy([(t) => OrderingTerm.asc(t.createdAt)]))
-        .get();
-  }
-
-  Future<int> addSyncQueue(OfflineSyncQueueCompanion item) {
-    return into(offlineSyncQueue).insert(item);
-  }
-
-  Future<void> updateSyncStatus(int id, int status, {DateTime? syncedAt}) {
-    return (update(offlineSyncQueue)..where((t) => t.id.equals(id)))
-        .write(OfflineSyncQueueCompanion(
-      status: Value(status),
-      syncedAt: Value(syncedAt),
-    ));
-  }
-
   Stream<List<LocalBillsData>> watchAllBills() {
     return (select(localBills)..orderBy([(t) => OrderingTerm.desc(t.billTime)]))
         .watch();
@@ -874,15 +845,6 @@ class AppDatabase extends _$AppDatabase {
   Stream<int> watchBillsTotalCount() {
     final countExp = localBills.id.count();
     final query = selectOnly(localBills)..addColumns([countExp]);
-    return query.watchSingle().map((row) => row.read(countExp) ?? 0);
-  }
-
-  /// 待同步数量（syncStatus=0）
-  Stream<int> watchPendingSyncCount() {
-    final countExp = localBills.id.count();
-    final query = selectOnly(localBills)
-      ..addColumns([countExp])
-      ..where(localBills.syncStatus.equals(0));
     return query.watchSingle().map((row) => row.read(countExp) ?? 0);
   }
 

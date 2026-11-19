@@ -1,6 +1,6 @@
 # 咕咕鱼记账 (gugu_bill)
 
-> AI 智能全自动记账 App —— 基于 Flutter / Dart 的本地优先、离线可用个人记账应用。  
+> AI 智能全自动记账 App —— 基于 Flutter / Dart，**数据存本地 Drift**。  
 > 支持 **DeepSeek 对话记账 / 记负债 / 还债**，以及 Android **无障碍 + 通知栏**自动识别入账（含拼多多等场景）。
 
 当前版本：`1.1.4+6`  
@@ -21,7 +21,7 @@
 - [包名说明（正式版红线）](#包名说明正式版红线)
 - [主题与颜色规范](#主题与颜色规范)
 - [数据存储规范](#数据存储规范)
-- [离线同步 & SourceHash](#离线同步--sourcehash)
+- [SourceHash 防重复](#sourcehash-防重复)
 - [Android 原生集成](#android-原生集成)
 - [业务约束](#业务约束)
 - [常见问题](#常见问题)
@@ -34,9 +34,7 @@
 - **无障碍自动记账**：Android `AccessibilityService` 监听支付/电商页面（如拼多多支付成功），解析金额与标题规格并入账。
 - **通知栏自动记账**：`NotificationListenerService` 监听支付通知（可与无障碍配合）。
 - **防重复 SourceHash**：来源文本 SHA-256 去重，避免同笔重复入账。
-- **离线优先**：写操作进入 `offline_sync_queue`，网络恢复后后台重试同步。
-- **本地数据库**：Drift / SQLite，无后端也可完整使用。
-- **Mock 模式**：可一键切换真实/模拟后端。
+- **本地数据库**：Drift / SQLite；账单/负债/聊天等直接落本地，**无 Mock 模式、无离线同步队列**。
 - **主题中心**：多套主题 + 自定义主题，颜色跟随主题切换。
 - **五栏导航**：首页 / 记一笔 / 咕咕鱼 / 负债 / 统计。
 
@@ -49,7 +47,7 @@
 | 框架 | Flutter 3.10+ / Dart 3.9+ |
 | 状态管理 | Provider 6.x |
 | 本地数据库 | Drift 2.22 + sqlite3_flutter_libs |
-| 网络 | Dio 5.7 + connectivity_plus |
+| 网络 | Dio（预留；业务以本地库为准） |
 | AI | DeepSeek OpenAI 兼容接口（`deepseek-flash`） |
 | 路由 | fluro |
 | 图表 | fl_chart |
@@ -77,7 +75,7 @@
 
 - `ai_settings_page.dart`：启用 AI、性格、DeepSeek API Key（保存后关闭页面）
 - `add_liability_page.dart`：新增/编辑负债（信用卡/房贷/车贷/分期/私人借款/月付信贷）
-- `setting_page.dart`：自动记账开关、权限、清理、Mock、入口到 AI 设置
+- `setting_page.dart`：自动记账开关、权限、备份导入导出、入口到 AI 设置
 - `theme_center_page.dart`：主题中心
 - `resource_management_page.dart`：银行 / 信贷机构 / 分类等资源
 
@@ -134,7 +132,7 @@ lib/
 │   ├── keep_alive_channel.dart
 │   └── notification_channel.dart
 ├── database/
-│   ├── database.dart          # 表定义 / 迁移 / DAO（当前 schemaVersion = 11）
+│   ├── database.dart          # 表定义 / 迁移 / DAO（当前 schemaVersion = 12）
 │   └── database.g.dart        # build_runner 生成，勿手改
 ├── pages/
 │   ├── gugu_ai_page.dart
@@ -169,7 +167,8 @@ android/app/src/main/kotlin/com/example/demo_app/
 | `local_accounts` / `local_bills` | 账户 / 账单 |
 | `local_liabilities` / `local_liability_repays` | 负债 / 还款 |
 | `local_categories` / `local_banks` / `local_credit_institutions` | 分类 / 银行 / 信贷机构 |
-| `offline_sync_queue` | 离线同步队列 |
+
+> schemaVersion ≥ 12 起已删除 `offline_sync_queue`。
 
 ---
 
@@ -238,18 +237,7 @@ dart run build_runner build --delete-conflicting-outputs
 
 ---
 
-## 离线同步 & SourceHash
-
-### 离线队列 `offline_sync_queue`
-
-| status | 含义 |
-|---|---|
-| 0 | 待同步 |
-| 1 | 同步中 |
-| 2 | 已同步 |
-| 3 | 失败（保留重试） |
-
-### SourceHash
+## SourceHash 防重复
 
 短信 / 通知 / 无障碍 / 负债还款等来源写入 `local_bills.sourceHash`，入库前去重。
 
@@ -267,21 +255,20 @@ dart run build_runner build --delete-conflicting-outputs
 
 ## 业务约束
 
-1. 统计类汇总优先由后端/本地聚合结果渲染，避免前端随意换算口径。
-2. 离线写 → 队列 → 自动同步；失败保留重试。
+1. 统计以本地聚合为准，金额用 `Decimal`。
+2. 不再使用离线同步队列 / Mock 模式。
 3. `sourceHash` 防重复。
 4. 转账不计入收支统计。
-5. 金额使用 `Decimal`，禁止 `double` 直接算钱。
-6. AI 对话记账/记负债/还债：以模型返回 JSON 为准，本地不做自然语言正则拆句。
-7. Android 可监听；iOS 仅提示系统限制。
-8. 禁止提交 `android/key.properties`、密钥、用户数据库文件。
+5. AI 对话记账/记负债/还债：以模型返回 JSON 为准。
+6. Android 可监听；iOS 仅提示系统限制。
+7. 禁止提交 `android/key.properties`、密钥、用户数据库文件。
 
 ---
 
 ## 常见问题
 
 **Q: 改了 `database.dart` 没生效？**  
-A: 重新执行 `build_runner` 生成 `database.g.dart`，并完整重启 App 以跑迁移。
+A: 重新执行 `build_runner` 生成 `database.g.dart`，并完整重启 App 以跑迁移（含 v12 删除同步队列表）。
 
 **Q: 咕咕鱼不记账？**  
 A: 检查 AI 是否启用、API Key 是否填写；看日志里 `AI 解析结果 bills/liabilities/repays` 条数。
@@ -299,4 +286,4 @@ A: 不能监听系统支付页/通知到同等深度，设计上仅 Android 主�
 
 ## 许可与说明
 
-本仓库为咕咕鱼记账工程源码。Mock 模式可独立演示；DeepSeek Key、签名文件等敏感信息请自行本地配置，勿提交到 Git。
+本仓库为咕咕鱼记账工程源码。DeepSeek Key、签名文件等敏感信息请自行本地配置，勿提交到 Git。

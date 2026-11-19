@@ -1,12 +1,9 @@
 import 'dart:io';
-import 'dart:async';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:drift/drift.dart';
 import '../database/database.dart';
-import '../services/network_service.dart';
 import '../android_channel/auto_record_service.dart';
 import '../android_channel/accessibility_channel.dart';
 import '../android_channel/notification_channel.dart';
@@ -17,24 +14,15 @@ import 'package:flutter/material.dart';
 
 class AppProvider extends ChangeNotifier {
   final AppDatabase _db;
-  final NetworkService _network;
 
-  bool _isOnline = true;
-  bool _mockMode = true;
   // 自动记账开关
   bool _accessibilityAutoRecordEnabled = false;
   bool _notificationAutoRecordEnabled = false;
-  int _pendingSyncCount = 0;
   bool _accessibilityPermissionGranted = false;
   bool _notificationPermissionGranted = false;
   bool _accessibilityServiceRunning = false;
   bool _ignoringBatteryOptimizations = false;
-  // 保存网络监听订阅，防止内存泄漏
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
-  bool get isOnline => _isOnline;
-  bool get mockMode => _mockMode;
-  
   // 无障碍自动记账开关
   bool get accessibilityAutoRecordEnabled => _accessibilityAutoRecordEnabled;
   bool get notificationAutoRecordEnabled => _notificationAutoRecordEnabled;
@@ -43,7 +31,6 @@ class AppProvider extends ChangeNotifier {
   bool get anyAutoRecordEnabled =>
       _accessibilityAutoRecordEnabled || _notificationAutoRecordEnabled;
   
-  int get pendingSyncCount => _pendingSyncCount;
   bool get accessibilityPermissionGranted => _accessibilityPermissionGranted;
   bool get notificationPermissionGranted => _notificationPermissionGranted;
   bool get accessibilityServiceRunning => _accessibilityServiceRunning;
@@ -61,10 +48,8 @@ class AppProvider extends ChangeNotifier {
   bool get allPermissionsGranted =>
       _accessibilityPermissionGranted || _notificationPermissionGranted;
 
-  AppProvider(this._db, this._network) {
+  AppProvider(this._db) {
     _init();
-    // 持续监听同步队列变化，自动更新 UI 显示的待同步数
-    _watchPendingSync();
   }
 
   /// 暴露数据库给其他服务（如 BackupService）使用
@@ -76,36 +61,10 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 监听同步队列，实时更新待同步数量
-  void _watchPendingSync() {
-    final query = _db.select(_db.offlineSyncQueue)
-      ..where((t) => t.status.equals(0) | t.status.equals(3));
-    query.watch().listen((items) {
-      if (_pendingSyncCount != items.length) {
-        _pendingSyncCount = items.length;
-        notifyListeners();
-      }
-    });
-  }
-
   void _init() async {
-    // 监听网络状态
-    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((results) {
-      _isOnline = !results.contains(ConnectivityResult.none);
-      notifyListeners();
-      if (_isOnline) {
-        _processSyncQueue();
-      }
-    });
-
-    // 获取初始网络状态
-    final result = await Connectivity().checkConnectivity();
-    _isOnline = !result.contains(ConnectivityResult.none);
-
     // 加载用户配置
     final config = await _db.getUserConfig();
     if (config != null) {
-      _mockMode = config.mockMode;
       _accessibilityAutoRecordEnabled = config.accessibilityAutoRecordEnabled;
       _notificationAutoRecordEnabled = config.notificationAutoRecordEnabled;
     }
@@ -128,9 +87,6 @@ class AppProvider extends ChangeNotifier {
     if (anyAutoRecordEnabled) {
       _startAutoRecordService();
     }
-
-    // 更新待同步数量
-    _updatePendingSyncCount();
 
     notifyListeners();
   }
@@ -172,33 +128,6 @@ class AppProvider extends ChangeNotifier {
       await keepAlive.startKeepAlive();
     } else {
       await keepAlive.stopKeepAlive();
-    }
-  }
-
-  Future<void> _updatePendingSyncCount() async {
-    final items = await _db.getPendingSyncItems();
-    _pendingSyncCount = items.length;
-    notifyListeners();
-  }
-
-  /// 处理同步队列（项目规则：单条失败保留队列下次重试）
-  Future<void> _processSyncQueue() async {
-    final items = await _db.getPendingSyncItems();
-    for (final item in items) {
-      await _db.updateSyncStatus(item.id, 1); // 同步中
-      try {
-        // Mock 模式：直接视为成功；真实模式下应调用 _network.request
-        if (_mockMode) {
-          await _db.updateSyncStatus(item.id, 2, syncedAt: DateTime.now());
-        } else {
-          // TODO: 真实后端同步逻辑
-          // 失败时标记 status=3（待重试），由下次同步再次尝试
-          await _db.updateSyncStatus(item.id, 2, syncedAt: DateTime.now());
-        }
-      } catch (e) {
-        debugPrint('同步失败（保留队列稍后重试）: $e');
-        await _db.updateSyncStatus(item.id, 3); // 失败：保留队列
-      }
     }
   }
 
@@ -351,16 +280,6 @@ class AppProvider extends ChangeNotifier {
   String _generateSourceHash(String source) {
     final bytes = utf8.encode(source);
     return sha256.convert(bytes).toString();
-  }
-
-  Future<void> setMockMode(bool enabled) async {
-    _mockMode = enabled;
-    _network.setMockMode(enabled);
-    await _db.insertOrUpdateUserConfig(LocalUserConfigCompanion(
-      mockMode: Value(enabled),
-      updatedAt: Value(DateTime.now()),
-    ));
-    notifyListeners();
   }
 
   /// 开启自动记账时顺带请求「发送通知」权限（Android 13+）
@@ -547,8 +466,6 @@ class AppProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    // 取消网络状态监听订阅
-    _connectivitySubscription?.cancel();
     AutoRecordService.instance.dispose();
     super.dispose();
   }

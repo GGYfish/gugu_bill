@@ -32,64 +32,39 @@
 
 ## 项目基础信息
 基于官方flutter create空白项目增量开发，不替换整个工程，保留原有项目文件。
-技术栈：Flutter3.10+ Dart3，Drift本地SQLite数据库，Provider状态管理，Dio网络，fluro路由，fl_chart图表，permission_handler权限，connectivity_plus网络监听。
-项目名称：ai_bill，Mock模式优先，无需后端即可完整运行，可一键切换真实后端。
+技术栈：Flutter3.10+ Dart3，Drift本地SQLite数据库，Provider状态管理，Dio（预留）、fluro路由，fl_chart图表，permission_handler权限。
+项目名称：ai_bill / gugu_bill。**本地优先**：账单/负债/聊天等一律存 Drift，已移除 Mock 模式与 offline_sync_queue。
 
 ## 目录强制规范
-lib/
-├── main.dart                 #程序入口
-├── ui_constants.dart         #颜色、尺寸、字体全部写在这里，禁止硬编码色值圆角
-├── core/
-│   ├── dio_client.dart      #dio封装，内置bool mockMode开关，mockMode=true模拟接口返回，不走真实http
-│   └── app_provider.dart    #全局Provider，存放db实例、登录状态、自动记账开关、离线待同步数量
-├── database/
-│   ├── app_database.dart    #drift数据库入口
-│   ├── tables/              #6个.drift表文件
-│   │   ├── offline_sync_queue.drift
-│   │   ├── local_user_config.drift
-│   │   ├── local_accounts.drift
-│   │   ├── local_bills.drift
-│   │   ├── local_liabilities.drift
-│   │   └── local_liability_repays.drift
-│   └── dao/                 #dao层，所有数据库操作走dao，页面禁止直接操作db
-├── utils/                   #工具类：toast、permission、network、hash_util(sha256 sourceHash幂等)
-├── widgets/                 #公共组件：common_empty、common_loading、common_dialog、bill_item、account_selector
-├── pages/
-│   ├── main_tab_page.dart   #底部4tab主框架：首页｜记一笔｜负债台账｜统计
-│   ├── home/
-│   ├── write_bill/
-│   ├── liability/
-│   ├── statistic/
-│   ├── login/
-│   └── setting/
-└── android_channel/         #MethodChannel，对接安卓原生通知监听、短信监听
-
-pubspec.yaml依赖严格按照之前给出版本，不要随意升级大版本。
+以当前工程 `lib/` 为准（main / database / pages / providers / services / android_channel 等）。
+底部五栏：首页｜记一笔｜咕咕鱼｜负债｜统计。
+pubspec.yaml依赖不要随意升级大版本。
 drift必须执行dart run build_runner build生成.g.dart文件。
 
 ## 业务强制约束（必须严格遵守，不能违背）
-1. 前端**禁止做任何金额、余额、统计数值计算**；统计、收支全部由mock/后端返回，前端只做渲染展示。
-2. 离线同步机制：断网所有写操作写入offline_sync_queue，标记isLocalTemp=1；网络恢复后台自动执行事务同步；同步成功清除标记、删除队列；单条失败保留队列下次重试。
-3. sourceHash：短信、通知、语音、OCR来源全部生成sha256 sourceHash，用于防重复记账。
-4. 负债模块：AI识别到负债信息**只弹窗提示用户确认，绝不自动创建负债记录**。
+1. 金额使用 Decimal / utils/money，禁止 double 直接算钱；统计以本地聚合或明确接口为准。
+2. ~~离线同步队列~~：已移除。数据本身本地存储，不再维护 offline_sync_queue。
+3. sourceHash：短信、通知、无障碍、负债还款等来源生成 sha256，用于防重复记账。
+4. 咕咕鱼 AI 可通过自然语言记账单 / 记负债 / 还债（以 DeepSeek 返回 JSON 落库）。
 5. 转账账单类型不计入收支统计。
 6. 双端差异化：
-   - Android：支持短信监听、通知监听（原生NotificationListenerService + MethodChannel回传dart）
-   - iOS：完全关闭短信/通知采集开关，只展示系统限制提示，不做后台监听逻辑。
+   - Android：支持无障碍 / 通知栏自动记账
+   - iOS：关闭系统监听，只展示限制提示
 7. OCR图片：只存储图片url，**禁止把图片二进制存入数据库**。
-8. 退出登录/一键清空本地数据：事务清空全部6张数据表。
-9. 数据库全部使用watch流式查询，配合StreamBuilder驱动UI，尽量避免setState。
-10. mockMode=true：全部接口内存模拟返回，不请求网络；mockMode=false访问真实后端；业务代码无需改动。
-11. **禁止硬编码任何业务数据字典**：银行列表、分类列表、负债类型配置、标签、字典选项等所有"可枚举的业务数据"必须存数据库（drift 表）通过 DAO 读取；禁止在 dart 文件里写 `static const List<XXX> allXXX = [...]` 这类硬编码字典。颜色/尺寸/字体常量写 `ui_constants.dart` 不在此限制内（属于 UI 资源）。
+8. 一键清空 / 备份导入：事务清空业务表（不含随意清用户配置除非明确要求）。
+9. 数据库优先使用 watch 流式查询驱动 UI。
+10. ~~mockMode~~：已移除，禁止再加 Mock 开关与内存假接口主导业务。
+11. **禁止硬编码任何业务数据字典**：银行/分类/信贷机构等走数据库；颜色尺寸字体走 ui_constants / 主题。
 
 ## Tab页面功能清单
-Tab1【首页】：本月收支卡片、自动记账状态提示、离线待同步数量提示、待确认账单入口、时间流账单列表；待同步账单显示标记。
-Tab2【记一笔】：手动记账(收入/支出/转账)、语音记账、OCR拍照记账；账户选择、分类、备注、时间。
-Tab3【负债台账】：负债概览卡片；列表（全部/未结清/已结清）；超期高亮；新增/编辑/删除负债；登记还款、还款流水；AI识别弹窗确认。
-Tab4【统计&预算】：日周月年时间筛选；饼图、折线图；消费排行；AI文案展示；月度预算、超支提醒。
+Tab【首页】：本月收支、自动记账状态、待确认、账单流。
+Tab【记一笔】：手动记账（独立页面）。
+Tab【咕咕鱼】：DeepSeek 对话记账/记负债/还债。
+Tab【负债】：概览、列表、新增、还款流水。
+Tab【统计】：日周月年筛选、图表、排行。
 
 ## 用户&设置
-登录页面mock手机号登录；游客模式限制自动记账；用户中心弹窗；设置页：自动记账开关、权限跳转、清理缓存、一键清空本地数据。
+设置页：自动记账开关、权限跳转、备份导入导出、AI 设置入口等。
 
 ## Android原生要求
 Dart不能直接监听通知、短信；在android/app原生kotlin写NotificationListenerService、短信广播接收器；MethodChannel把原始文本传给dart层；AndroidManifest注册对应service、权限。
