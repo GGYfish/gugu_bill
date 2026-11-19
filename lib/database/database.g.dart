@@ -634,15 +634,15 @@ class $LocalUserConfigTable extends LocalUserConfig
   late final GeneratedColumn<bool> accessibilityAutoRecordEnabled =
       GeneratedColumn<bool>(
         'accessibility_auto_record_enabled',
-    aliasedName,
-    false,
-    type: DriftSqlType.bool,
-    requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
+        aliasedName,
+        false,
+        type: DriftSqlType.bool,
+        requiredDuringInsert: false,
+        defaultConstraints: GeneratedColumn.constraintIsAlways(
           'CHECK ("accessibility_auto_record_enabled" IN (0, 1))',
-    ),
-    defaultValue: const Constant(false),
-  );
+        ),
+        defaultValue: const Constant(false),
+      );
   static const VerificationMeta _smsListenEnabledMeta = const VerificationMeta(
     'smsListenEnabled',
   );
@@ -709,6 +709,81 @@ class $LocalUserConfigTable extends LocalUserConfig
     requiredDuringInsert: false,
     defaultValue: const Constant('{}'),
   );
+  static const VerificationMeta _aiEnabledMeta = const VerificationMeta(
+    'aiEnabled',
+  );
+  @override
+  late final GeneratedColumn<bool> aiEnabled = GeneratedColumn<bool>(
+    'ai_enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("ai_enabled" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _aiBaseUrlMeta = const VerificationMeta(
+    'aiBaseUrl',
+  );
+  @override
+  late final GeneratedColumn<String> aiBaseUrl = GeneratedColumn<String>(
+    'ai_base_url',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _aiApiKeyMeta = const VerificationMeta(
+    'aiApiKey',
+  );
+  @override
+  late final GeneratedColumn<String> aiApiKey = GeneratedColumn<String>(
+    'ai_api_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _aiModelMeta = const VerificationMeta(
+    'aiModel',
+  );
+  @override
+  late final GeneratedColumn<String> aiModel = GeneratedColumn<String>(
+    'ai_model',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _aiPersonalityMeta = const VerificationMeta(
+    'aiPersonality',
+  );
+  @override
+  late final GeneratedColumn<String> aiPersonality = GeneratedColumn<String>(
+    'ai_personality',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('tease'),
+  );
+  static const VerificationMeta _aiAppellationMeta = const VerificationMeta(
+    'aiAppellation',
+  );
+  @override
+  late final GeneratedColumn<String> aiAppellation = GeneratedColumn<String>(
+    'ai_appellation',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -747,6 +822,12 @@ class $LocalUserConfigTable extends LocalUserConfig
     monthlyBudget,
     categoryOrder,
     categoryUsage,
+    aiEnabled,
+    aiBaseUrl,
+    aiApiKey,
+    aiModel,
+    aiPersonality,
+    aiAppellation,
     createdAt,
     updatedAt,
   ];
@@ -852,6 +933,48 @@ class $LocalUserConfigTable extends LocalUserConfig
         ),
       );
     }
+    if (data.containsKey('ai_enabled')) {
+      context.handle(
+        _aiEnabledMeta,
+        aiEnabled.isAcceptableOrUnknown(data['ai_enabled']!, _aiEnabledMeta),
+      );
+    }
+    if (data.containsKey('ai_base_url')) {
+      context.handle(
+        _aiBaseUrlMeta,
+        aiBaseUrl.isAcceptableOrUnknown(data['ai_base_url']!, _aiBaseUrlMeta),
+      );
+    }
+    if (data.containsKey('ai_api_key')) {
+      context.handle(
+        _aiApiKeyMeta,
+        aiApiKey.isAcceptableOrUnknown(data['ai_api_key']!, _aiApiKeyMeta),
+      );
+    }
+    if (data.containsKey('ai_model')) {
+      context.handle(
+        _aiModelMeta,
+        aiModel.isAcceptableOrUnknown(data['ai_model']!, _aiModelMeta),
+      );
+    }
+    if (data.containsKey('ai_personality')) {
+      context.handle(
+        _aiPersonalityMeta,
+        aiPersonality.isAcceptableOrUnknown(
+          data['ai_personality']!,
+          _aiPersonalityMeta,
+        ),
+      );
+    }
+    if (data.containsKey('ai_appellation')) {
+      context.handle(
+        _aiAppellationMeta,
+        aiAppellation.isAcceptableOrUnknown(
+          data['ai_appellation']!,
+          _aiAppellationMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -921,6 +1044,30 @@ class $LocalUserConfigTable extends LocalUserConfig
         DriftSqlType.string,
         data['${effectivePrefix}category_usage'],
       )!,
+      aiEnabled: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}ai_enabled'],
+      )!,
+      aiBaseUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ai_base_url'],
+      )!,
+      aiApiKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ai_api_key'],
+      )!,
+      aiModel: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ai_model'],
+      )!,
+      aiPersonality: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ai_personality'],
+      )!,
+      aiAppellation: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ai_appellation'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -952,6 +1099,20 @@ class LocalUserConfigData extends DataClass
   final double monthlyBudget;
   final String categoryOrder;
   final String categoryUsage;
+  final bool aiEnabled;
+
+  /// 接口地址，如 https://api.openai.com/v1 或 https://api.deepseek.com/v1
+  final String aiBaseUrl;
+  final String aiApiKey;
+
+  /// 模型名，如 gpt-4o-mini / deepseek-chat
+  final String aiModel;
+
+  /// AI 性格：tease / gentle / serious / cute / coach
+  final String aiPersonality;
+
+  /// AI 对用户的称谓，如「老板」「宝」「小明」
+  final String aiAppellation;
   final DateTime createdAt;
   final DateTime updatedAt;
   const LocalUserConfigData({
@@ -967,6 +1128,12 @@ class LocalUserConfigData extends DataClass
     required this.monthlyBudget,
     required this.categoryOrder,
     required this.categoryUsage,
+    required this.aiEnabled,
+    required this.aiBaseUrl,
+    required this.aiApiKey,
+    required this.aiModel,
+    required this.aiPersonality,
+    required this.aiAppellation,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -997,6 +1164,12 @@ class LocalUserConfigData extends DataClass
     map['monthly_budget'] = Variable<double>(monthlyBudget);
     map['category_order'] = Variable<String>(categoryOrder);
     map['category_usage'] = Variable<String>(categoryUsage);
+    map['ai_enabled'] = Variable<bool>(aiEnabled);
+    map['ai_base_url'] = Variable<String>(aiBaseUrl);
+    map['ai_api_key'] = Variable<String>(aiApiKey);
+    map['ai_model'] = Variable<String>(aiModel);
+    map['ai_personality'] = Variable<String>(aiPersonality);
+    map['ai_appellation'] = Variable<String>(aiAppellation);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -1022,6 +1195,12 @@ class LocalUserConfigData extends DataClass
       monthlyBudget: Value(monthlyBudget),
       categoryOrder: Value(categoryOrder),
       categoryUsage: Value(categoryUsage),
+      aiEnabled: Value(aiEnabled),
+      aiBaseUrl: Value(aiBaseUrl),
+      aiApiKey: Value(aiApiKey),
+      aiModel: Value(aiModel),
+      aiPersonality: Value(aiPersonality),
+      aiAppellation: Value(aiAppellation),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -1051,6 +1230,12 @@ class LocalUserConfigData extends DataClass
       monthlyBudget: serializer.fromJson<double>(json['monthlyBudget']),
       categoryOrder: serializer.fromJson<String>(json['categoryOrder']),
       categoryUsage: serializer.fromJson<String>(json['categoryUsage']),
+      aiEnabled: serializer.fromJson<bool>(json['aiEnabled']),
+      aiBaseUrl: serializer.fromJson<String>(json['aiBaseUrl']),
+      aiApiKey: serializer.fromJson<String>(json['aiApiKey']),
+      aiModel: serializer.fromJson<String>(json['aiModel']),
+      aiPersonality: serializer.fromJson<String>(json['aiPersonality']),
+      aiAppellation: serializer.fromJson<String>(json['aiAppellation']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -1077,6 +1262,12 @@ class LocalUserConfigData extends DataClass
       'monthlyBudget': serializer.toJson<double>(monthlyBudget),
       'categoryOrder': serializer.toJson<String>(categoryOrder),
       'categoryUsage': serializer.toJson<String>(categoryUsage),
+      'aiEnabled': serializer.toJson<bool>(aiEnabled),
+      'aiBaseUrl': serializer.toJson<String>(aiBaseUrl),
+      'aiApiKey': serializer.toJson<String>(aiApiKey),
+      'aiModel': serializer.toJson<String>(aiModel),
+      'aiPersonality': serializer.toJson<String>(aiPersonality),
+      'aiAppellation': serializer.toJson<String>(aiAppellation),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -1095,6 +1286,12 @@ class LocalUserConfigData extends DataClass
     double? monthlyBudget,
     String? categoryOrder,
     String? categoryUsage,
+    bool? aiEnabled,
+    String? aiBaseUrl,
+    String? aiApiKey,
+    String? aiModel,
+    String? aiPersonality,
+    String? aiAppellation,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => LocalUserConfigData(
@@ -1113,6 +1310,12 @@ class LocalUserConfigData extends DataClass
     monthlyBudget: monthlyBudget ?? this.monthlyBudget,
     categoryOrder: categoryOrder ?? this.categoryOrder,
     categoryUsage: categoryUsage ?? this.categoryUsage,
+    aiEnabled: aiEnabled ?? this.aiEnabled,
+    aiBaseUrl: aiBaseUrl ?? this.aiBaseUrl,
+    aiApiKey: aiApiKey ?? this.aiApiKey,
+    aiModel: aiModel ?? this.aiModel,
+    aiPersonality: aiPersonality ?? this.aiPersonality,
+    aiAppellation: aiAppellation ?? this.aiAppellation,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -1145,6 +1348,16 @@ class LocalUserConfigData extends DataClass
       categoryUsage: data.categoryUsage.present
           ? data.categoryUsage.value
           : this.categoryUsage,
+      aiEnabled: data.aiEnabled.present ? data.aiEnabled.value : this.aiEnabled,
+      aiBaseUrl: data.aiBaseUrl.present ? data.aiBaseUrl.value : this.aiBaseUrl,
+      aiApiKey: data.aiApiKey.present ? data.aiApiKey.value : this.aiApiKey,
+      aiModel: data.aiModel.present ? data.aiModel.value : this.aiModel,
+      aiPersonality: data.aiPersonality.present
+          ? data.aiPersonality.value
+          : this.aiPersonality,
+      aiAppellation: data.aiAppellation.present
+          ? data.aiAppellation.value
+          : this.aiAppellation,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -1169,6 +1382,12 @@ class LocalUserConfigData extends DataClass
           ..write('monthlyBudget: $monthlyBudget, ')
           ..write('categoryOrder: $categoryOrder, ')
           ..write('categoryUsage: $categoryUsage, ')
+          ..write('aiEnabled: $aiEnabled, ')
+          ..write('aiBaseUrl: $aiBaseUrl, ')
+          ..write('aiApiKey: $aiApiKey, ')
+          ..write('aiModel: $aiModel, ')
+          ..write('aiPersonality: $aiPersonality, ')
+          ..write('aiAppellation: $aiAppellation, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -1189,6 +1408,12 @@ class LocalUserConfigData extends DataClass
     monthlyBudget,
     categoryOrder,
     categoryUsage,
+    aiEnabled,
+    aiBaseUrl,
+    aiApiKey,
+    aiModel,
+    aiPersonality,
+    aiAppellation,
     createdAt,
     updatedAt,
   );
@@ -1210,6 +1435,12 @@ class LocalUserConfigData extends DataClass
           other.monthlyBudget == this.monthlyBudget &&
           other.categoryOrder == this.categoryOrder &&
           other.categoryUsage == this.categoryUsage &&
+          other.aiEnabled == this.aiEnabled &&
+          other.aiBaseUrl == this.aiBaseUrl &&
+          other.aiApiKey == this.aiApiKey &&
+          other.aiModel == this.aiModel &&
+          other.aiPersonality == this.aiPersonality &&
+          other.aiAppellation == this.aiAppellation &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -1227,6 +1458,12 @@ class LocalUserConfigCompanion extends UpdateCompanion<LocalUserConfigData> {
   final Value<double> monthlyBudget;
   final Value<String> categoryOrder;
   final Value<String> categoryUsage;
+  final Value<bool> aiEnabled;
+  final Value<String> aiBaseUrl;
+  final Value<String> aiApiKey;
+  final Value<String> aiModel;
+  final Value<String> aiPersonality;
+  final Value<String> aiAppellation;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   const LocalUserConfigCompanion({
@@ -1242,6 +1479,12 @@ class LocalUserConfigCompanion extends UpdateCompanion<LocalUserConfigData> {
     this.monthlyBudget = const Value.absent(),
     this.categoryOrder = const Value.absent(),
     this.categoryUsage = const Value.absent(),
+    this.aiEnabled = const Value.absent(),
+    this.aiBaseUrl = const Value.absent(),
+    this.aiApiKey = const Value.absent(),
+    this.aiModel = const Value.absent(),
+    this.aiPersonality = const Value.absent(),
+    this.aiAppellation = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
@@ -1258,6 +1501,12 @@ class LocalUserConfigCompanion extends UpdateCompanion<LocalUserConfigData> {
     this.monthlyBudget = const Value.absent(),
     this.categoryOrder = const Value.absent(),
     this.categoryUsage = const Value.absent(),
+    this.aiEnabled = const Value.absent(),
+    this.aiBaseUrl = const Value.absent(),
+    this.aiApiKey = const Value.absent(),
+    this.aiModel = const Value.absent(),
+    this.aiPersonality = const Value.absent(),
+    this.aiAppellation = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
@@ -1274,6 +1523,12 @@ class LocalUserConfigCompanion extends UpdateCompanion<LocalUserConfigData> {
     Expression<double>? monthlyBudget,
     Expression<String>? categoryOrder,
     Expression<String>? categoryUsage,
+    Expression<bool>? aiEnabled,
+    Expression<String>? aiBaseUrl,
+    Expression<String>? aiApiKey,
+    Expression<String>? aiModel,
+    Expression<String>? aiPersonality,
+    Expression<String>? aiAppellation,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
   }) {
@@ -1293,6 +1548,12 @@ class LocalUserConfigCompanion extends UpdateCompanion<LocalUserConfigData> {
       if (monthlyBudget != null) 'monthly_budget': monthlyBudget,
       if (categoryOrder != null) 'category_order': categoryOrder,
       if (categoryUsage != null) 'category_usage': categoryUsage,
+      if (aiEnabled != null) 'ai_enabled': aiEnabled,
+      if (aiBaseUrl != null) 'ai_base_url': aiBaseUrl,
+      if (aiApiKey != null) 'ai_api_key': aiApiKey,
+      if (aiModel != null) 'ai_model': aiModel,
+      if (aiPersonality != null) 'ai_personality': aiPersonality,
+      if (aiAppellation != null) 'ai_appellation': aiAppellation,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
     });
@@ -1311,6 +1572,12 @@ class LocalUserConfigCompanion extends UpdateCompanion<LocalUserConfigData> {
     Value<double>? monthlyBudget,
     Value<String>? categoryOrder,
     Value<String>? categoryUsage,
+    Value<bool>? aiEnabled,
+    Value<String>? aiBaseUrl,
+    Value<String>? aiApiKey,
+    Value<String>? aiModel,
+    Value<String>? aiPersonality,
+    Value<String>? aiAppellation,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
   }) {
@@ -1330,6 +1597,12 @@ class LocalUserConfigCompanion extends UpdateCompanion<LocalUserConfigData> {
       monthlyBudget: monthlyBudget ?? this.monthlyBudget,
       categoryOrder: categoryOrder ?? this.categoryOrder,
       categoryUsage: categoryUsage ?? this.categoryUsage,
+      aiEnabled: aiEnabled ?? this.aiEnabled,
+      aiBaseUrl: aiBaseUrl ?? this.aiBaseUrl,
+      aiApiKey: aiApiKey ?? this.aiApiKey,
+      aiModel: aiModel ?? this.aiModel,
+      aiPersonality: aiPersonality ?? this.aiPersonality,
+      aiAppellation: aiAppellation ?? this.aiAppellation,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -1380,6 +1653,24 @@ class LocalUserConfigCompanion extends UpdateCompanion<LocalUserConfigData> {
     if (categoryUsage.present) {
       map['category_usage'] = Variable<String>(categoryUsage.value);
     }
+    if (aiEnabled.present) {
+      map['ai_enabled'] = Variable<bool>(aiEnabled.value);
+    }
+    if (aiBaseUrl.present) {
+      map['ai_base_url'] = Variable<String>(aiBaseUrl.value);
+    }
+    if (aiApiKey.present) {
+      map['ai_api_key'] = Variable<String>(aiApiKey.value);
+    }
+    if (aiModel.present) {
+      map['ai_model'] = Variable<String>(aiModel.value);
+    }
+    if (aiPersonality.present) {
+      map['ai_personality'] = Variable<String>(aiPersonality.value);
+    }
+    if (aiAppellation.present) {
+      map['ai_appellation'] = Variable<String>(aiAppellation.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -1408,6 +1699,12 @@ class LocalUserConfigCompanion extends UpdateCompanion<LocalUserConfigData> {
           ..write('monthlyBudget: $monthlyBudget, ')
           ..write('categoryOrder: $categoryOrder, ')
           ..write('categoryUsage: $categoryUsage, ')
+          ..write('aiEnabled: $aiEnabled, ')
+          ..write('aiBaseUrl: $aiBaseUrl, ')
+          ..write('aiApiKey: $aiApiKey, ')
+          ..write('aiModel: $aiModel, ')
+          ..write('aiPersonality: $aiPersonality, ')
+          ..write('aiAppellation: $aiAppellation, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -3149,11 +3446,11 @@ class $LocalLiabilitiesTable extends LocalLiabilities
   late final GeneratedColumn<DateTime> lastPaymentDate =
       GeneratedColumn<DateTime>(
         'last_payment_date',
-    aliasedName,
-    true,
-    type: DriftSqlType.dateTime,
-    requiredDuringInsert: false,
-  );
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _remarkMeta = const VerificationMeta('remark');
   @override
   late final GeneratedColumn<String> remark = GeneratedColumn<String>(
@@ -6281,6 +6578,521 @@ class LocalCreditInstitutionsCompanion
   }
 }
 
+class $LocalAiChatMessagesTable extends LocalAiChatMessages
+    with TableInfo<$LocalAiChatMessagesTable, LocalAiChatMessageData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalAiChatMessagesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _isUserMeta = const VerificationMeta('isUser');
+  @override
+  late final GeneratedColumn<bool> isUser = GeneratedColumn<bool>(
+    'is_user',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_user" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _contentMeta = const VerificationMeta(
+    'content',
+  );
+  @override
+  late final GeneratedColumn<String> content = GeneratedColumn<String>(
+    'content',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _stickerIdMeta = const VerificationMeta(
+    'stickerId',
+  );
+  @override
+  late final GeneratedColumn<String> stickerId = GeneratedColumn<String>(
+    'sticker_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _billLinesJsonMeta = const VerificationMeta(
+    'billLinesJson',
+  );
+  @override
+  late final GeneratedColumn<String> billLinesJson = GeneratedColumn<String>(
+    'bill_lines_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('[]'),
+  );
+  static const VerificationMeta _isErrorMeta = const VerificationMeta(
+    'isError',
+  );
+  @override
+  late final GeneratedColumn<bool> isError = GeneratedColumn<bool>(
+    'is_error',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_error" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _isSystemMeta = const VerificationMeta(
+    'isSystem',
+  );
+  @override
+  late final GeneratedColumn<bool> isSystem = GeneratedColumn<bool>(
+    'is_system',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_system" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    isUser,
+    content,
+    stickerId,
+    billLinesJson,
+    isError,
+    isSystem,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_ai_chat_messages';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalAiChatMessageData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('is_user')) {
+      context.handle(
+        _isUserMeta,
+        isUser.isAcceptableOrUnknown(data['is_user']!, _isUserMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_isUserMeta);
+    }
+    if (data.containsKey('content')) {
+      context.handle(
+        _contentMeta,
+        content.isAcceptableOrUnknown(data['content']!, _contentMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_contentMeta);
+    }
+    if (data.containsKey('sticker_id')) {
+      context.handle(
+        _stickerIdMeta,
+        stickerId.isAcceptableOrUnknown(data['sticker_id']!, _stickerIdMeta),
+      );
+    }
+    if (data.containsKey('bill_lines_json')) {
+      context.handle(
+        _billLinesJsonMeta,
+        billLinesJson.isAcceptableOrUnknown(
+          data['bill_lines_json']!,
+          _billLinesJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_error')) {
+      context.handle(
+        _isErrorMeta,
+        isError.isAcceptableOrUnknown(data['is_error']!, _isErrorMeta),
+      );
+    }
+    if (data.containsKey('is_system')) {
+      context.handle(
+        _isSystemMeta,
+        isSystem.isAcceptableOrUnknown(data['is_system']!, _isSystemMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  LocalAiChatMessageData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalAiChatMessageData(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      isUser: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_user'],
+      )!,
+      content: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}content'],
+      )!,
+      stickerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sticker_id'],
+      ),
+      billLinesJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}bill_lines_json'],
+      )!,
+      isError: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_error'],
+      )!,
+      isSystem: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_system'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalAiChatMessagesTable createAlias(String alias) {
+    return $LocalAiChatMessagesTable(attachedDatabase, alias);
+  }
+}
+
+class LocalAiChatMessageData extends DataClass
+    implements Insertable<LocalAiChatMessageData> {
+  final int id;
+  final bool isUser;
+
+  /// 消息正文（不可命名 text，会与 Table.text 冲突）
+  final String content;
+  final String? stickerId;
+
+  /// JSON 字符串数组，如 ["-¥18 餐饮"]
+  final String billLinesJson;
+  final bool isError;
+
+  /// 欢迎语等系统提示
+  final bool isSystem;
+  final DateTime createdAt;
+  const LocalAiChatMessageData({
+    required this.id,
+    required this.isUser,
+    required this.content,
+    this.stickerId,
+    required this.billLinesJson,
+    required this.isError,
+    required this.isSystem,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['is_user'] = Variable<bool>(isUser);
+    map['content'] = Variable<String>(content);
+    if (!nullToAbsent || stickerId != null) {
+      map['sticker_id'] = Variable<String>(stickerId);
+    }
+    map['bill_lines_json'] = Variable<String>(billLinesJson);
+    map['is_error'] = Variable<bool>(isError);
+    map['is_system'] = Variable<bool>(isSystem);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  LocalAiChatMessagesCompanion toCompanion(bool nullToAbsent) {
+    return LocalAiChatMessagesCompanion(
+      id: Value(id),
+      isUser: Value(isUser),
+      content: Value(content),
+      stickerId: stickerId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(stickerId),
+      billLinesJson: Value(billLinesJson),
+      isError: Value(isError),
+      isSystem: Value(isSystem),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory LocalAiChatMessageData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalAiChatMessageData(
+      id: serializer.fromJson<int>(json['id']),
+      isUser: serializer.fromJson<bool>(json['isUser']),
+      content: serializer.fromJson<String>(json['content']),
+      stickerId: serializer.fromJson<String?>(json['stickerId']),
+      billLinesJson: serializer.fromJson<String>(json['billLinesJson']),
+      isError: serializer.fromJson<bool>(json['isError']),
+      isSystem: serializer.fromJson<bool>(json['isSystem']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'isUser': serializer.toJson<bool>(isUser),
+      'content': serializer.toJson<String>(content),
+      'stickerId': serializer.toJson<String?>(stickerId),
+      'billLinesJson': serializer.toJson<String>(billLinesJson),
+      'isError': serializer.toJson<bool>(isError),
+      'isSystem': serializer.toJson<bool>(isSystem),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  LocalAiChatMessageData copyWith({
+    int? id,
+    bool? isUser,
+    String? content,
+    Value<String?> stickerId = const Value.absent(),
+    String? billLinesJson,
+    bool? isError,
+    bool? isSystem,
+    DateTime? createdAt,
+  }) => LocalAiChatMessageData(
+    id: id ?? this.id,
+    isUser: isUser ?? this.isUser,
+    content: content ?? this.content,
+    stickerId: stickerId.present ? stickerId.value : this.stickerId,
+    billLinesJson: billLinesJson ?? this.billLinesJson,
+    isError: isError ?? this.isError,
+    isSystem: isSystem ?? this.isSystem,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  LocalAiChatMessageData copyWithCompanion(LocalAiChatMessagesCompanion data) {
+    return LocalAiChatMessageData(
+      id: data.id.present ? data.id.value : this.id,
+      isUser: data.isUser.present ? data.isUser.value : this.isUser,
+      content: data.content.present ? data.content.value : this.content,
+      stickerId: data.stickerId.present ? data.stickerId.value : this.stickerId,
+      billLinesJson: data.billLinesJson.present
+          ? data.billLinesJson.value
+          : this.billLinesJson,
+      isError: data.isError.present ? data.isError.value : this.isError,
+      isSystem: data.isSystem.present ? data.isSystem.value : this.isSystem,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalAiChatMessageData(')
+          ..write('id: $id, ')
+          ..write('isUser: $isUser, ')
+          ..write('content: $content, ')
+          ..write('stickerId: $stickerId, ')
+          ..write('billLinesJson: $billLinesJson, ')
+          ..write('isError: $isError, ')
+          ..write('isSystem: $isSystem, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    isUser,
+    content,
+    stickerId,
+    billLinesJson,
+    isError,
+    isSystem,
+    createdAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalAiChatMessageData &&
+          other.id == this.id &&
+          other.isUser == this.isUser &&
+          other.content == this.content &&
+          other.stickerId == this.stickerId &&
+          other.billLinesJson == this.billLinesJson &&
+          other.isError == this.isError &&
+          other.isSystem == this.isSystem &&
+          other.createdAt == this.createdAt);
+}
+
+class LocalAiChatMessagesCompanion
+    extends UpdateCompanion<LocalAiChatMessageData> {
+  final Value<int> id;
+  final Value<bool> isUser;
+  final Value<String> content;
+  final Value<String?> stickerId;
+  final Value<String> billLinesJson;
+  final Value<bool> isError;
+  final Value<bool> isSystem;
+  final Value<DateTime> createdAt;
+  const LocalAiChatMessagesCompanion({
+    this.id = const Value.absent(),
+    this.isUser = const Value.absent(),
+    this.content = const Value.absent(),
+    this.stickerId = const Value.absent(),
+    this.billLinesJson = const Value.absent(),
+    this.isError = const Value.absent(),
+    this.isSystem = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  LocalAiChatMessagesCompanion.insert({
+    this.id = const Value.absent(),
+    required bool isUser,
+    required String content,
+    this.stickerId = const Value.absent(),
+    this.billLinesJson = const Value.absent(),
+    this.isError = const Value.absent(),
+    this.isSystem = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  }) : isUser = Value(isUser),
+       content = Value(content);
+  static Insertable<LocalAiChatMessageData> custom({
+    Expression<int>? id,
+    Expression<bool>? isUser,
+    Expression<String>? content,
+    Expression<String>? stickerId,
+    Expression<String>? billLinesJson,
+    Expression<bool>? isError,
+    Expression<bool>? isSystem,
+    Expression<DateTime>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (isUser != null) 'is_user': isUser,
+      if (content != null) 'content': content,
+      if (stickerId != null) 'sticker_id': stickerId,
+      if (billLinesJson != null) 'bill_lines_json': billLinesJson,
+      if (isError != null) 'is_error': isError,
+      if (isSystem != null) 'is_system': isSystem,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  LocalAiChatMessagesCompanion copyWith({
+    Value<int>? id,
+    Value<bool>? isUser,
+    Value<String>? content,
+    Value<String?>? stickerId,
+    Value<String>? billLinesJson,
+    Value<bool>? isError,
+    Value<bool>? isSystem,
+    Value<DateTime>? createdAt,
+  }) {
+    return LocalAiChatMessagesCompanion(
+      id: id ?? this.id,
+      isUser: isUser ?? this.isUser,
+      content: content ?? this.content,
+      stickerId: stickerId ?? this.stickerId,
+      billLinesJson: billLinesJson ?? this.billLinesJson,
+      isError: isError ?? this.isError,
+      isSystem: isSystem ?? this.isSystem,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (isUser.present) {
+      map['is_user'] = Variable<bool>(isUser.value);
+    }
+    if (content.present) {
+      map['content'] = Variable<String>(content.value);
+    }
+    if (stickerId.present) {
+      map['sticker_id'] = Variable<String>(stickerId.value);
+    }
+    if (billLinesJson.present) {
+      map['bill_lines_json'] = Variable<String>(billLinesJson.value);
+    }
+    if (isError.present) {
+      map['is_error'] = Variable<bool>(isError.value);
+    }
+    if (isSystem.present) {
+      map['is_system'] = Variable<bool>(isSystem.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalAiChatMessagesCompanion(')
+          ..write('id: $id, ')
+          ..write('isUser: $isUser, ')
+          ..write('content: $content, ')
+          ..write('stickerId: $stickerId, ')
+          ..write('billLinesJson: $billLinesJson, ')
+          ..write('isError: $isError, ')
+          ..write('isSystem: $isSystem, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -6303,6 +7115,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $LocalBanksTable localBanks = $LocalBanksTable(this);
   late final $LocalCreditInstitutionsTable localCreditInstitutions =
       $LocalCreditInstitutionsTable(this);
+  late final $LocalAiChatMessagesTable localAiChatMessages =
+      $LocalAiChatMessagesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -6317,6 +7131,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     localCategories,
     localBanks,
     localCreditInstitutions,
+    localAiChatMessages,
   ];
 }
 
@@ -6618,6 +7433,12 @@ typedef $$LocalUserConfigTableCreateCompanionBuilder =
       Value<double> monthlyBudget,
       Value<String> categoryOrder,
       Value<String> categoryUsage,
+      Value<bool> aiEnabled,
+      Value<String> aiBaseUrl,
+      Value<String> aiApiKey,
+      Value<String> aiModel,
+      Value<String> aiPersonality,
+      Value<String> aiAppellation,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
     });
@@ -6635,6 +7456,12 @@ typedef $$LocalUserConfigTableUpdateCompanionBuilder =
       Value<double> monthlyBudget,
       Value<String> categoryOrder,
       Value<String> categoryUsage,
+      Value<bool> aiEnabled,
+      Value<String> aiBaseUrl,
+      Value<String> aiApiKey,
+      Value<String> aiModel,
+      Value<String> aiPersonality,
+      Value<String> aiAppellation,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
     });
@@ -6708,6 +7535,36 @@ class $$LocalUserConfigTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<bool> get aiEnabled => $composableBuilder(
+    column: $table.aiEnabled,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get aiBaseUrl => $composableBuilder(
+    column: $table.aiBaseUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get aiApiKey => $composableBuilder(
+    column: $table.aiApiKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get aiModel => $composableBuilder(
+    column: $table.aiModel,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get aiPersonality => $composableBuilder(
+    column: $table.aiPersonality,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get aiAppellation => $composableBuilder(
+    column: $table.aiAppellation,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnFilters(column),
@@ -6761,8 +7618,8 @@ class $$LocalUserConfigTableOrderingComposer
   ColumnOrderings<bool> get accessibilityAutoRecordEnabled =>
       $composableBuilder(
         column: $table.accessibilityAutoRecordEnabled,
-    builder: (column) => ColumnOrderings(column),
-  );
+        builder: (column) => ColumnOrderings(column),
+      );
 
   ColumnOrderings<bool> get smsListenEnabled => $composableBuilder(
     column: $table.smsListenEnabled,
@@ -6786,6 +7643,36 @@ class $$LocalUserConfigTableOrderingComposer
 
   ColumnOrderings<String> get categoryUsage => $composableBuilder(
     column: $table.categoryUsage,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get aiEnabled => $composableBuilder(
+    column: $table.aiEnabled,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get aiBaseUrl => $composableBuilder(
+    column: $table.aiBaseUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get aiApiKey => $composableBuilder(
+    column: $table.aiApiKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get aiModel => $composableBuilder(
+    column: $table.aiModel,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get aiPersonality => $composableBuilder(
+    column: $table.aiPersonality,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get aiAppellation => $composableBuilder(
+    column: $table.aiAppellation,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -6832,8 +7719,8 @@ class $$LocalUserConfigTableAnnotationComposer
   GeneratedColumn<bool> get accessibilityAutoRecordEnabled =>
       $composableBuilder(
         column: $table.accessibilityAutoRecordEnabled,
-    builder: (column) => column,
-  );
+        builder: (column) => column,
+      );
 
   GeneratedColumn<bool> get smsListenEnabled => $composableBuilder(
     column: $table.smsListenEnabled,
@@ -6857,6 +7744,28 @@ class $$LocalUserConfigTableAnnotationComposer
 
   GeneratedColumn<String> get categoryUsage => $composableBuilder(
     column: $table.categoryUsage,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get aiEnabled =>
+      $composableBuilder(column: $table.aiEnabled, builder: (column) => column);
+
+  GeneratedColumn<String> get aiBaseUrl =>
+      $composableBuilder(column: $table.aiBaseUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get aiApiKey =>
+      $composableBuilder(column: $table.aiApiKey, builder: (column) => column);
+
+  GeneratedColumn<String> get aiModel =>
+      $composableBuilder(column: $table.aiModel, builder: (column) => column);
+
+  GeneratedColumn<String> get aiPersonality => $composableBuilder(
+    column: $table.aiPersonality,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get aiAppellation => $composableBuilder(
+    column: $table.aiAppellation,
     builder: (column) => column,
   );
 
@@ -6918,6 +7827,12 @@ class $$LocalUserConfigTableTableManager
                 Value<double> monthlyBudget = const Value.absent(),
                 Value<String> categoryOrder = const Value.absent(),
                 Value<String> categoryUsage = const Value.absent(),
+                Value<bool> aiEnabled = const Value.absent(),
+                Value<String> aiBaseUrl = const Value.absent(),
+                Value<String> aiApiKey = const Value.absent(),
+                Value<String> aiModel = const Value.absent(),
+                Value<String> aiPersonality = const Value.absent(),
+                Value<String> aiAppellation = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
               }) => LocalUserConfigCompanion(
@@ -6933,6 +7848,12 @@ class $$LocalUserConfigTableTableManager
                 monthlyBudget: monthlyBudget,
                 categoryOrder: categoryOrder,
                 categoryUsage: categoryUsage,
+                aiEnabled: aiEnabled,
+                aiBaseUrl: aiBaseUrl,
+                aiApiKey: aiApiKey,
+                aiModel: aiModel,
+                aiPersonality: aiPersonality,
+                aiAppellation: aiAppellation,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),
@@ -6952,6 +7873,12 @@ class $$LocalUserConfigTableTableManager
                 Value<double> monthlyBudget = const Value.absent(),
                 Value<String> categoryOrder = const Value.absent(),
                 Value<String> categoryUsage = const Value.absent(),
+                Value<bool> aiEnabled = const Value.absent(),
+                Value<String> aiBaseUrl = const Value.absent(),
+                Value<String> aiApiKey = const Value.absent(),
+                Value<String> aiModel = const Value.absent(),
+                Value<String> aiPersonality = const Value.absent(),
+                Value<String> aiAppellation = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
               }) => LocalUserConfigCompanion.insert(
@@ -6967,6 +7894,12 @@ class $$LocalUserConfigTableTableManager
                 monthlyBudget: monthlyBudget,
                 categoryOrder: categoryOrder,
                 categoryUsage: categoryUsage,
+                aiEnabled: aiEnabled,
+                aiBaseUrl: aiBaseUrl,
+                aiApiKey: aiApiKey,
+                aiModel: aiModel,
+                aiPersonality: aiPersonality,
+                aiAppellation: aiAppellation,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),
@@ -9385,6 +10318,275 @@ typedef $$LocalCreditInstitutionsTableProcessedTableManager =
       LocalCreditInstitutionsData,
       PrefetchHooks Function()
     >;
+typedef $$LocalAiChatMessagesTableCreateCompanionBuilder =
+    LocalAiChatMessagesCompanion Function({
+      Value<int> id,
+      required bool isUser,
+      required String content,
+      Value<String?> stickerId,
+      Value<String> billLinesJson,
+      Value<bool> isError,
+      Value<bool> isSystem,
+      Value<DateTime> createdAt,
+    });
+typedef $$LocalAiChatMessagesTableUpdateCompanionBuilder =
+    LocalAiChatMessagesCompanion Function({
+      Value<int> id,
+      Value<bool> isUser,
+      Value<String> content,
+      Value<String?> stickerId,
+      Value<String> billLinesJson,
+      Value<bool> isError,
+      Value<bool> isSystem,
+      Value<DateTime> createdAt,
+    });
+
+class $$LocalAiChatMessagesTableFilterComposer
+    extends Composer<_$AppDatabase, $LocalAiChatMessagesTable> {
+  $$LocalAiChatMessagesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isUser => $composableBuilder(
+    column: $table.isUser,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get stickerId => $composableBuilder(
+    column: $table.stickerId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get billLinesJson => $composableBuilder(
+    column: $table.billLinesJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isError => $composableBuilder(
+    column: $table.isError,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isSystem => $composableBuilder(
+    column: $table.isSystem,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalAiChatMessagesTableOrderingComposer
+    extends Composer<_$AppDatabase, $LocalAiChatMessagesTable> {
+  $$LocalAiChatMessagesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isUser => $composableBuilder(
+    column: $table.isUser,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get stickerId => $composableBuilder(
+    column: $table.stickerId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get billLinesJson => $composableBuilder(
+    column: $table.billLinesJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isError => $composableBuilder(
+    column: $table.isError,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isSystem => $composableBuilder(
+    column: $table.isSystem,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalAiChatMessagesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $LocalAiChatMessagesTable> {
+  $$LocalAiChatMessagesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<bool> get isUser =>
+      $composableBuilder(column: $table.isUser, builder: (column) => column);
+
+  GeneratedColumn<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<String> get stickerId =>
+      $composableBuilder(column: $table.stickerId, builder: (column) => column);
+
+  GeneratedColumn<String> get billLinesJson => $composableBuilder(
+    column: $table.billLinesJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isError =>
+      $composableBuilder(column: $table.isError, builder: (column) => column);
+
+  GeneratedColumn<bool> get isSystem =>
+      $composableBuilder(column: $table.isSystem, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$LocalAiChatMessagesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $LocalAiChatMessagesTable,
+          LocalAiChatMessageData,
+          $$LocalAiChatMessagesTableFilterComposer,
+          $$LocalAiChatMessagesTableOrderingComposer,
+          $$LocalAiChatMessagesTableAnnotationComposer,
+          $$LocalAiChatMessagesTableCreateCompanionBuilder,
+          $$LocalAiChatMessagesTableUpdateCompanionBuilder,
+          (
+            LocalAiChatMessageData,
+            BaseReferences<
+              _$AppDatabase,
+              $LocalAiChatMessagesTable,
+              LocalAiChatMessageData
+            >,
+          ),
+          LocalAiChatMessageData,
+          PrefetchHooks Function()
+        > {
+  $$LocalAiChatMessagesTableTableManager(
+    _$AppDatabase db,
+    $LocalAiChatMessagesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalAiChatMessagesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalAiChatMessagesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$LocalAiChatMessagesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<bool> isUser = const Value.absent(),
+                Value<String> content = const Value.absent(),
+                Value<String?> stickerId = const Value.absent(),
+                Value<String> billLinesJson = const Value.absent(),
+                Value<bool> isError = const Value.absent(),
+                Value<bool> isSystem = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+              }) => LocalAiChatMessagesCompanion(
+                id: id,
+                isUser: isUser,
+                content: content,
+                stickerId: stickerId,
+                billLinesJson: billLinesJson,
+                isError: isError,
+                isSystem: isSystem,
+                createdAt: createdAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required bool isUser,
+                required String content,
+                Value<String?> stickerId = const Value.absent(),
+                Value<String> billLinesJson = const Value.absent(),
+                Value<bool> isError = const Value.absent(),
+                Value<bool> isSystem = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+              }) => LocalAiChatMessagesCompanion.insert(
+                id: id,
+                isUser: isUser,
+                content: content,
+                stickerId: stickerId,
+                billLinesJson: billLinesJson,
+                isError: isError,
+                isSystem: isSystem,
+                createdAt: createdAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalAiChatMessagesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $LocalAiChatMessagesTable,
+      LocalAiChatMessageData,
+      $$LocalAiChatMessagesTableFilterComposer,
+      $$LocalAiChatMessagesTableOrderingComposer,
+      $$LocalAiChatMessagesTableAnnotationComposer,
+      $$LocalAiChatMessagesTableCreateCompanionBuilder,
+      $$LocalAiChatMessagesTableUpdateCompanionBuilder,
+      (
+        LocalAiChatMessageData,
+        BaseReferences<
+          _$AppDatabase,
+          $LocalAiChatMessagesTable,
+          LocalAiChatMessageData
+        >,
+      ),
+      LocalAiChatMessageData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -9410,4 +10612,6 @@ class $AppDatabaseManager {
         _db,
         _db.localCreditInstitutions,
       );
+  $$LocalAiChatMessagesTableTableManager get localAiChatMessages =>
+      $$LocalAiChatMessagesTableTableManager(_db, _db.localAiChatMessages);
 }

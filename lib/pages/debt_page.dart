@@ -1,3 +1,4 @@
+import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -5,7 +6,9 @@ import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
 import '../providers/liability_provider.dart';
+import '../utils/money.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/top_toast.dart';
 import '../database/database.dart';
 import '../ui_constants.dart';
 import 'add_liability_page.dart';
@@ -21,7 +24,7 @@ class DebtPage extends StatefulWidget {
 
 class _DebtPageState extends State<DebtPage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  int _selectedFilter = 1; // 1未结清, 2已结清
+  int _unsettledSub = 0; // 0全部(未结清), 1当月未还, 2当月已还
 
   @override
   void initState() {
@@ -173,17 +176,29 @@ class _DebtPageState extends State<DebtPage> with SingleTickerProviderStateMixin
 
   /// 按类型分组展示负债
   List<Widget> _buildGroupedLiabilities(LiabilityProvider provider) {
-    final filtered = _getFilteredLiabilities(provider.liabilities);
+    final filtered = _getFilteredLiabilities(provider.liabilities, provider);
     final grouped = _groupByType(filtered);
 
     final widgets = <Widget>[];
 
+    if (filtered.isEmpty) {
+      widgets.add(const SliverToBoxAdapter(
+        child: EmptyState(
+          icon: Icons.inbox_outlined,
+          title: '暂无符合条件的负债',
+          subtitle: '换个筛选试试',
+        ),
+      ));
+      return widgets;
+    }
+
     for (final type in liabilityTypeConfigs) {
-      if (grouped.containsKey(type.value) && grouped[type.value]!.isNotEmpty) {
+      final items = grouped[type.value];
+      if (items != null && items.isNotEmpty) {
         // 类型标题
-        widgets.add(SliverToBoxAdapter(child: _buildTypeSectionHeader(type, grouped[type.value]!)));
+        widgets.add(SliverToBoxAdapter(child: _buildTypeSectionHeader(type, items)));
         // 该类型的负债列表
-        for (final liability in grouped[type.value]!) {
+        for (final liability in items) {
           widgets.add(SliverToBoxAdapter(child: _buildLiabilityItem(liability, provider)));
         }
       }
@@ -203,7 +218,8 @@ class _DebtPageState extends State<DebtPage> with SingleTickerProviderStateMixin
 
   /// 类型分组标题
   Widget _buildTypeSectionHeader(LiabilityTypeConfig type, List<LocalLiabilitiesData> items) {
-    final totalPending = items.fold<double>(0, (sum, l) => sum + (l.totalAmount - l.repaidAmount));
+    final totalPending = items.fold(
+        Decimal.zero, (Decimal sum, l) => sum + decimalOf(l.totalAmount) - decimalOf(l.repaidAmount));
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 20, 16, 8),
@@ -265,10 +281,10 @@ class _DebtPageState extends State<DebtPage> with SingleTickerProviderStateMixin
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '待还 ¥${totalPending.toStringAsFixed(2)}',
+                  '待还 ¥${formatMoney(totalPending)}',
                   style: TextStyle(
                     fontSize: 13,
-                    color: totalPending > 0 ? DebtColors.danger : DebtColors.success,
+                    color: totalPending > Decimal.zero ? DebtColors.danger : DebtColors.success,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -301,14 +317,24 @@ String _institutionLabel(String type) {
   }
 }
 
-List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> list) {
-    switch (_selectedFilter) {
-      case 1:
-        return list.where((l) => l.status == 0).toList();
-      case 2:
-        return list.where((l) => l.status == 1).toList();
+List<LocalLiabilitiesData> _getFilteredLiabilities(
+    List<LocalLiabilitiesData> list, LiabilityProvider provider) {
+    // 已去掉已结清/未结清两档，只在未结清范围内做当月筛选
+    final unsettled = list.where((l) => l.status == 0).toList();
+    switch (_unsettledSub) {
+      case 1: // 当月未还：本月待还 > 0
+        return unsettled
+            .where((l) =>
+                provider.liabilityThisMonthRepay(l) > Decimal.zero)
+            .toList();
+      case 2: // 当月已还：本月待还 == 0 且本月登记过还款
+        return unsettled
+            .where((l) =>
+                provider.liabilityThisMonthRepay(l) <= Decimal.zero &&
+                provider.liabilityHasRepayThisMonth(l))
+            .toList();
       default:
-        return list;
+        return unsettled;
     }
   }
 
@@ -559,62 +585,48 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
   }
 
   Widget _buildFilterChips() {
-    final filters = [
-      {'label': '未结清', 'value': 1},
-      {'label': '已结清', 'value': 2},
-    ];
-
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(
-        children: filters.map((f) {
-          final isSelected = _selectedFilter == f['value'];
-          return Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(
-                left: f['value'] == 1 ? 0 : 6,
-                right: f['value'] == 2 ? 0 : 6,
-              ),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                height: 36,
-                decoration: BoxDecoration(
-                  color: isSelected ? AppColors.primary : AppColors.surface,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: isSelected ? AppColors.primary : AppColors.divider,
-                  ),
-                  boxShadow: isSelected
-                      ? [
-                          BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.3),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => setState(() => _selectedFilter = f['value'] as int),
-                    borderRadius: BorderRadius.circular(18),
-                    child: Center(
-                      child: Text(
-                        f['label'] as String,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: isSelected ? Colors.white : AppColors.textSecondary,
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+        children: [
+          _buildSubFilterChip(label: '全部', value: 0),
+          const SizedBox(width: 8),
+          _buildSubFilterChip(label: '当月未还', value: 1),
+          const SizedBox(width: 8),
+          _buildSubFilterChip(label: '当月已还', value: 2),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubFilterChip({required String label, required int value}) {
+    final isSelected = _unsettledSub == value;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _unsettledSub = value),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          height: 32,
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppColors.primary.withValues(alpha: 0.1)
+                : AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isSelected ? AppColors.primary : AppColors.divider,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
               ),
             ),
-          );
-        }).toList(),
+          ),
+        ),
       ),
     );
   }
@@ -757,7 +769,7 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
                               const SizedBox(width: 4),
                               Text(
                                 formatter.format(
-                                  isMonthlyType ? monthlyAmount : (liability.totalAmount - liability.repaidAmount),
+                                  asDouble(isMonthlyType ? monthlyAmount : decimalOf(liability.totalAmount) - decimalOf(liability.repaidAmount)),
                                 ),
                                 style: TextStyle(
                                   fontSize: 20,
@@ -797,7 +809,7 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
                   ],
                 ),
                 // 还款日 + 本月待还（仅未结清时展示）
-                if (liability.status == 0 && (repayDay != null || thisMonth > 0)) ...[
+                if (liability.status == 0 && (repayDay != null || thisMonth > Decimal.zero)) ...[
                   const SizedBox(height: 10),
                   Row(
                     children: [
@@ -809,12 +821,12 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
                           color: AppColors.primary,
                           bgAlpha: 0.08,
                         ),
-                      if (repayDay != null && thisMonth > 0) const SizedBox(width: 8),
+                      if (repayDay != null && thisMonth > Decimal.zero) const SizedBox(width: 8),
                       // 本月待还 chip
-                      if (thisMonth > 0)
+                      if (thisMonth > Decimal.zero)
                         _buildListChip(
                           icon: Icons.payments_outlined,
-                          text: '本月待还 ${formatter.format(thisMonth)}',
+                          text: '本月待还 ${formatter.format(thisMonth.toDouble())}',
                           color: DebtColors.warning,
                           bgAlpha: 0.1,
                         )
@@ -851,7 +863,7 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            '已逾期 $overdueDays 天 · 待还 ${formatter.format(overdueAmount)}',
+                            '已逾期 $overdueDays 天 · 待还 ${formatter.format(overdueAmount.toDouble())}',
                             style: TextStyle(
                               fontSize: 12,
                               color: DebtColors.danger,
@@ -967,7 +979,7 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
     final isMonthlyType = liability.type == 'mortgage' ||
         liability.type == 'car_loan' ||
         liability.type == 'installment';
-    final pendingText = isMonthlyType ? monthlyAmount : liability.totalAmount - liability.repaidAmount;
+    final pendingText = asDouble(isMonthlyType ? monthlyAmount : decimalOf(liability.totalAmount) - decimalOf(liability.repaidAmount));
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -998,53 +1010,90 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
             size: 22,
           ),
         ),
-        title: Text(
-          liability.name,
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            '待还：${formatter.format(pendingText)}',
-            style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-          ),
-        ),
-        children: [
-          // 登记还款按钮
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            decoration: BoxDecoration(
-              color: typeConfig.color.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                liability.name,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => _showAddRepayDialog(context, liability),
-                borderRadius: BorderRadius.circular(12),
+            if (liability.status == 1)
+              Container(
+                margin: const EdgeInsets.only(left: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: DebtColors.success.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.add_circle_outline, color: typeConfig.color, size: 20),
-                    const SizedBox(width: 8),
+                    Icon(Icons.check_circle,
+                        color: DebtColors.success, size: 12),
+                    const SizedBox(width: 4),
                     Text(
-                      '登记还款',
+                      '已结清',
                       style: TextStyle(
-                        color: typeConfig.color,
+                        fontSize: 11,
+                        color: DebtColors.success,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            liability.status == 1
+                ? '已结清 · 共还款${formatter.format(asDouble(decimalOf(liability.repaidAmount)))}'
+                : '待还：${formatter.format(pendingText)}',
+            style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
           ),
-          const SizedBox(height: 12),
+        ),
+        children: [
+          // 登记还款按钮（已结清隐藏）
+          if (liability.status == 0)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: typeConfig.color.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _showAddRepayDialog(context, liability),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_circle_outline,
+                          color: typeConfig.color, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        '登记还款',
+                        style: TextStyle(
+                          color: typeConfig.color,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (liability.status == 0) const SizedBox(height: 12),
           // 还款记录列表
           StreamBuilder<List<LocalLiabilityRepaysData>>(
             stream: context.read<LiabilityProvider>().watchRepays(liability.liabilityId),
@@ -1129,20 +1178,25 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
   }
 
   void _showLiabilityDetail(LocalLiabilitiesData liability) {
+    // State 的 context 在弹窗开关期间保持稳定，先抓出来；
+    // builder 里用 detailContext 做 pop，禁止把已 pop 的 detailContext 再传给下一个弹窗。
+    final pageContext = context;
     final formatter = NumberFormat.currency(symbol: '¥', decimalDigits: 2);
-    final provider = context.read<LiabilityProvider>();
+    final provider = pageContext.read<LiabilityProvider>();
     final typeConfig = getTypeConfig(liability.type);
     final monthlyAmount = provider.liabilityMonthlyAmount(liability);
     final isMonthlyType = liability.type == 'mortgage' ||
         liability.type == 'car_loan' ||
         liability.type == 'installment';
-    final pendingAmount = isMonthlyType ? monthlyAmount : (liability.totalAmount - liability.repaidAmount);
+    final pendingAmount = isMonthlyType
+        ? monthlyAmount
+        : (decimalOf(liability.totalAmount) - decimalOf(liability.repaidAmount));
 
     showModalBottomSheet(
-      context: context,
+      context: pageContext,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
+      builder: (detailContext) => Container(
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -1232,7 +1286,7 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
                           const SizedBox(height: 12),
                           _buildDetailRow(
                             '待还金额',
-                            formatter.format(pendingAmount),
+                            formatter.format(asDouble(pendingAmount)),
                             DebtColors.danger,
                           ),
                         ],
@@ -1273,8 +1327,14 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
                               color: Colors.transparent,
                               child: InkWell(
                                 onTap: () {
-                                  Navigator.pop(context);
-                                  _showAddRepayDialog(context, liability);
+                                  // 先 pop 详情页，再用稳定的 pageContext 打开还款弹窗。
+                                  // 禁止把已 pop 的 detailContext 传给下一个弹窗，
+                                  // 否则新弹窗做祖先查询时会命中 deactivated 的旧节点。
+                                  Navigator.pop(detailContext);
+                                  Future.microtask(() {
+                                    if (!pageContext.mounted) return;
+                                    _showAddRepayDialog(pageContext, liability);
+                                  });
                                 },
                                 borderRadius: BorderRadius.circular(25),
                                 child: Center(
@@ -1310,12 +1370,14 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
                               color: Colors.transparent,
                               child: InkWell(
                                 onTap: () async {
-                                  // 先保存需要的数据
+                                  // 先抓稳定引用：detailContext pop 后即失活，后续 dialog/provider
+                                  // 必须用 pageContext + 已抓取的 provider。
                                   final liabilityId = liability.liabilityId;
-                                  final provider = context.read<LiabilityProvider>();
-                                  Navigator.pop(context);
+                                  final detailProvider =
+                                      pageContext.read<LiabilityProvider>();
+                                  Navigator.pop(detailContext);
                                   final confirm = await showDialog<bool>(
-                                    context: context,
+                                    context: pageContext,
                                     builder: (ctx) => AlertDialog(
                                       title: const Text('确认删除'),
                                       content: const Text('确定要删除这条负债记录吗？'),
@@ -1333,7 +1395,7 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
                                     ),
                                   );
                                   if (confirm == true) {
-                                    await provider.deleteLiability(liabilityId);
+                                    await detailProvider.deleteLiability(liabilityId);
                                   }
                                 },
                                 borderRadius: BorderRadius.circular(25),
@@ -1416,37 +1478,62 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
   }
 
   void _showAddRepayDialog(BuildContext context, LocalLiabilitiesData liability) {
+    // 入口处同步抓取稳定引用：弹窗停留期间列表刷新可能导致传入的
+    // itemBuilder/detailContext 失活，异步回调里禁止再用它做祖先查询。
+    final pageContext = context;
+    final provider = pageContext.read<LiabilityProvider>();
+    final messenger = ScaffoldMessenger.of(pageContext);
     final typeConfig = getTypeConfig(liability.type);
-    final monthlyAmount = context.read<LiabilityProvider>().liabilityMonthlyAmount(liability);
+    final monthlyAmount = provider.liabilityMonthlyAmount(liability);
     final isMonthlyType = liability.type == 'mortgage' ||
         liability.type == 'car_loan' ||
         liability.type == 'installment';
-    final pendingAmount = isMonthlyType ? monthlyAmount : (liability.totalAmount - liability.repaidAmount);
+    final remainingTotal =
+        decimalOf(liability.totalAmount) - decimalOf(liability.repaidAmount);
+    final pendingAmount =
+        isMonthlyType ? monthlyAmount : remainingTotal;
 
     // 消费分期 / 房贷 / 车贷：默认填充月供金额（可手动修改）
+    // 尾期月供可能大于剩余总额，此时按剩余总额封顶，否则一点确认就触发超额拦截
+    final defaultAmount = isMonthlyType && monthlyAmount > Decimal.zero
+        ? (monthlyAmount > remainingTotal ? remainingTotal : monthlyAmount)
+        : Decimal.zero;
     final amountController = TextEditingController(
-      text: isMonthlyType && monthlyAmount > 0
-          ? monthlyAmount.toStringAsFixed(2)
-          : '',
+      text: defaultAmount > Decimal.zero ? formatMoney(defaultAmount) : '',
     );
     final remarkController = TextEditingController();
 
+    // 快捷金额选项：点击自动填写（月供类：本期应还 + 全部结清；其他：全部结清）
+    // 无选中态：点击仅填充输入框，避免 StatefulBuilder 嵌套刷新
+    final quickOptions = <Map<String, Object>>[];
+    if (isMonthlyType &&
+        monthlyAmount > Decimal.zero &&
+        monthlyAmount < remainingTotal) {
+      quickOptions.add({'label': '本期应还', 'amount': monthlyAmount});
+    }
+    if (remainingTotal > Decimal.zero) {
+      quickOptions.add({'label': '全部结清', 'amount': remainingTotal});
+    }
+
     showModalBottomSheet(
-      context: context,
+      context: pageContext,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
+      builder: (sheetContext) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(sheetContext).size.height * 0.92,
+        ),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: EdgeInsets.only(
               left: 20,
               right: 20,
               top: 20,
-              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 20,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1517,7 +1604,7 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
                         style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
                       ),
                       Text(
-                        '¥${pendingAmount.toStringAsFixed(2)}',
+                        '¥${formatMoney(asDecimal(pendingAmount))}',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -1529,9 +1616,32 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
                 ),
                 const SizedBox(height: 16),
                 // 金额输入
-                Text(
-                  '还款金额',
-                  style: TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                Row(
+                  children: [
+                    Text(
+                      '还款金额',
+                      style: TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                    ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: remainingTotal > Decimal.zero
+                          ? () {
+                              amountController.text = formatMoney(remainingTotal);
+                              amountController.selection = TextSelection.fromPosition(
+                                TextPosition(offset: amountController.text.length),
+                              );
+                            }
+                          : null,
+                      child: Text(
+                        '一键还清 ¥${formatMoney(remainingTotal)}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 Container(
@@ -1551,8 +1661,45 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
                       border: InputBorder.none,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     ),
+                    onChanged: null,
                   ),
                 ),
+                // 快捷金额选项：点击自动填写对应金额
+                if (quickOptions.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    children: List.generate(quickOptions.length, (i) {
+                      final opt = quickOptions[i];
+                      final optAmount = asDecimal(opt['amount']);
+                      final optLabel = opt['label'] as String;
+                      return GestureDetector(
+                        onTap: () {
+                          amountController.text = formatMoney(optAmount);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.background,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: AppColors.divider,
+                            ),
+                          ),
+                          child: Text(
+                            '$optLabel ¥${formatMoney(optAmount)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 // 备注输入
                 Text(
@@ -1600,10 +1747,16 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
                     color: Colors.transparent,
                     child: InkWell(
                       onTap: () async {
-                        final amount = double.tryParse(amountController.text);
-                        if (amount == null || amount <= 0) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('请输入正确的还款金额')),
+                        final amount = parseMoney(amountController.text);
+                        if (amount <= Decimal.zero) {
+                          TopToast.show(sheetContext, '请输入正确的还款金额');
+                          return;
+                        }
+                        if (amount > remainingTotal) {
+                          final excess = amount - remainingTotal;
+                          TopToast.show(
+                            sheetContext,
+                            '还款金额超了 ¥${formatMoney(excess)}，最多可还 ¥${formatMoney(remainingTotal)}',
                           );
                           return;
                         }
@@ -1617,22 +1770,33 @@ List<LocalLiabilitiesData> _getFilteredLiabilities(List<LocalLiabilitiesData> li
                         // 保存还款记录（内部已包含：插入 local_liability_repays + 更新 repaidAmount）
                         // 注意：不要再调 BillProvider.addBill(... liabilityId: ...)，否则
                         // bill_provider 内部还会再插入一条还款记录并 += 已还，造成重复记账。
-                        await context.read<LiabilityProvider>().addRepay(
-                          liabilityId: liability.liabilityId,
-                          amount: amount,
-                          accountId: 'default',
-                          remark: remarkController.text.isEmpty ? null : remarkController.text,
-                        );
-
-                        if (mounted) {
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('还款成功：¥${amount.toStringAsFixed(2)}'),
-                              backgroundColor: DebtColors.success,
-                            ),
+                        // pageContext/provider/messenger 入口处已抓取，异步后禁止再用
+                        // context/sheetContext 做祖先查询（可能已 deactivate）。
+                        try {
+                          await provider.addRepay(
+                            liabilityId: liability.liabilityId,
+                            amount: amount,
+                            accountId: 'default',
+                            remark: remarkController.text.isEmpty ? null : remarkController.text,
                           );
+                        } on ArgumentError catch (e) {
+                          if (!pageContext.mounted) return;
+                          TopToast.show(pageContext, e.message);
+                          return;
+                        } catch (e) {
+                          if (!pageContext.mounted) return;
+                          TopToast.show(pageContext, '还款失败：$e');
+                          return;
                         }
+
+                        if (!pageContext.mounted) return;
+                        Navigator.of(pageContext).pop();
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text('还款成功：¥${amount.toStringAsFixed(2)}'),
+                            backgroundColor: DebtColors.success,
+                          ),
+                        );
                       },
                       borderRadius: BorderRadius.circular(27),
                       child: const Center(

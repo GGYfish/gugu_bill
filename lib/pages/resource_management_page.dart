@@ -1373,7 +1373,10 @@ class _CategoryList extends StatelessWidget {
       builder: (_, provider, __) {
         final expenseParents = provider.expenseParentCategories;
         final incomeParents = provider.incomeParentCategories;
-        if (expenseParents.isEmpty && incomeParents.isEmpty) {
+        final otherParents = provider.otherParentCategories;
+        if (expenseParents.isEmpty &&
+            incomeParents.isEmpty &&
+            otherParents.isEmpty) {
           return Center(
             child: Text(
               '暂无分类，点击右下角添加',
@@ -1396,6 +1399,13 @@ class _CategoryList extends StatelessWidget {
                 title: '收入分类',
                 parents: incomeParents,
                 type: 'income',
+                provider: provider,
+              ),
+            if (otherParents.isNotEmpty)
+              _CategorySection(
+                title: '其他分类',
+                parents: otherParents,
+                type: 'other',
                 provider: provider,
               ),
           ],
@@ -1463,22 +1473,29 @@ class _CategoryTile extends StatelessWidget {
         children: [
           Row(
             children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: _ColorPicker.parse(parent.color),
-                child: Icon(
-                  _IconPicker.resolve(parent.icon),
-                  color: Colors.white,
-                  size: 18,
+              GestureDetector(
+                onTap: () => _openEditParent(context),
+                child: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: _ColorPicker.parse(parent.color),
+                  child: Icon(
+                    _IconPicker.resolve(parent.icon),
+                    color: Colors.white,
+                    size: 18,
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  parent.name,
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w500,
+                child: GestureDetector(
+                  onTap: () => _openEditParent(context),
+                  behavior: HitTestBehavior.opaque,
+                  child: Text(
+                    parent.name,
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ),
@@ -1489,11 +1506,16 @@ class _CategoryTile extends StatelessWidget {
                 onPressed: () => _showAddSubCategoryDialog(context, parent),
               ),
               IconButton(
+                icon: Icon(Icons.edit_outlined,
+                    color: AppColors.textTertiary, size: 20),
+                tooltip: '编辑分类',
+                onPressed: () => _openEditParent(context),
+              ),
+              IconButton(
                 icon: Icon(Icons.delete_outline,
                     color: AppColors.expense, size: 20),
-                onPressed: () => context
-                    .read<CategoryManagementProvider>()
-                    .deleteCategory(parent.categoryId),
+                tooltip: '删除分类',
+                onPressed: () => _confirmDeleteParent(context),
               ),
             ],
           ),
@@ -1507,7 +1529,7 @@ class _CategoryTile extends StatelessWidget {
                   // Chip 配色：浅色分类色背景 + 半透明分类色边框 + 主题主文字色
                   // 避免文字与背景同色系导致看不清
                   final tagColor = _ColorPicker.parse(s.color);
-                  return Chip(
+                  return InputChip(
                     label: Text(s.name),
                     backgroundColor: tagColor.withValues(alpha: 0.12),
                     side: BorderSide(
@@ -1520,9 +1542,8 @@ class _CategoryTile extends StatelessWidget {
                       fontWeight: FontWeight.w500,
                     ),
                     deleteIconColor: AppColors.textSecondary,
-                    onDeleted: () => context
-                        .read<CategoryManagementProvider>()
-                        .deleteSubCategory(s.categoryId),
+                    onPressed: () => _showEditSubCategoryDialog(context, s),
+                    onDeleted: () => _confirmDeleteSub(context, s),
                   );
                 }).toList(),
               ),
@@ -1530,6 +1551,88 @@ class _CategoryTile extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _openEditParent(BuildContext context) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _AddCategoryPage(existing: parent),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteParent(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('删除分类', style: TextStyle(color: AppColors.textPrimary)),
+        content: Text(
+          '确定删除「${parent.name}」及其全部小分类吗？此操作不可恢复。',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('取消', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.expense),
+            child: const Text('删除', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) {
+      await context
+          .read<CategoryManagementProvider>()
+          .deleteCategory(parent.categoryId);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已删除分类：${parent.name}')),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmDeleteSub(
+    BuildContext context,
+    LocalCategoriesData sub,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('删除小分类', style: TextStyle(color: AppColors.textPrimary)),
+        content: Text(
+          '确定删除小分类「${sub.name}」吗？',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('取消', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.expense),
+            child: const Text('删除', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) {
+      await context
+          .read<CategoryManagementProvider>()
+          .deleteSubCategory(sub.categoryId);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已删除小分类：${sub.name}')),
+        );
+      }
+    }
   }
 
   /// 新增子分类：仅弹窗输入名称即可，子分类的图标/颜色继承父分类
@@ -1545,21 +1648,52 @@ class _CategoryTile extends StatelessWidget {
       parentColor: _ColorPicker.parse(parent.color),
     );
   }
+
+  /// 编辑小分类名称
+  Future<void> _showEditSubCategoryDialog(
+    BuildContext context,
+    LocalCategoriesData sub,
+  ) async {
+    await showEditSubCategoryDialog(
+      context,
+      categoryId: sub.categoryId,
+      initialName: sub.name,
+      parentName: parent.name,
+      parentIcon: _IconPicker.resolve(parent.icon),
+      parentColor: _ColorPicker.parse(parent.color),
+    );
+  }
 }
 
-/// 新增大分类页面
+/// 新增 / 编辑大分类页面
 class _AddCategoryPage extends StatefulWidget {
-  const _AddCategoryPage();
+  final LocalCategoriesData? existing;
+  const _AddCategoryPage({this.existing});
 
   @override
   State<_AddCategoryPage> createState() => _AddCategoryPageState();
 }
 
 class _AddCategoryPageState extends State<_AddCategoryPage> {
-  final _nameCtrl = TextEditingController();
-  String _type = 'expense';
-  String _icon = 'category';
-  String _color = '#1976D2';
+  late final TextEditingController _nameCtrl;
+  late String _type;
+  late String _icon;
+  late String _color;
+
+  bool get _isEdit => widget.existing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _nameCtrl = TextEditingController(text: e?.name ?? '');
+    _type = e?.type ?? 'expense';
+    if (_type != 'expense' && _type != 'income' && _type != 'other') {
+      _type = 'expense';
+    }
+    _icon = e?.icon ?? 'category';
+    _color = e?.color ?? '#1976D2';
+  }
 
   @override
   void dispose() {
@@ -1572,7 +1706,7 @@ class _AddCategoryPageState extends State<_AddCategoryPage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('新增分类'),
+        title: Text(_isEdit ? '编辑分类' : '新增分类'),
         backgroundColor: AppColors.surface,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
@@ -1601,7 +1735,10 @@ class _AddCategoryPageState extends State<_AddCategoryPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text('保存', style: TextStyle(color: Colors.white)),
+                child: Text(
+                  _isEdit ? '保存修改' : '保存',
+                  style: const TextStyle(color: Colors.white),
+                ),
               ),
             ),
           ],
@@ -1633,6 +1770,8 @@ class _AddCategoryPageState extends State<_AddCategoryPage> {
             _typeButton('支出', 'expense'),
             const SizedBox(width: 12),
             _typeButton('收入', 'income'),
+            const SizedBox(width: 12),
+            _typeButton('其他', 'other'),
           ],
         ),
       ],
@@ -1713,7 +1852,7 @@ class _AddCategoryPageState extends State<_AddCategoryPage> {
         fontWeight: FontWeight.w500,
       );
 
-  void _onSubmit() {
+  Future<void> _onSubmit() async {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1721,12 +1860,32 @@ class _AddCategoryPageState extends State<_AddCategoryPage> {
       );
       return;
     }
-    context.read<CategoryManagementProvider>().addParentCategory(
-          name: name,
-          type: _type,
-          icon: _icon,
-          color: _color,
-        );
+    final provider = context.read<CategoryManagementProvider>();
+    if (_isEdit) {
+      await provider.updateCategory(
+        widget.existing!.categoryId,
+        name: name,
+        type: _type,
+        icon: _icon,
+        color: _color,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已更新分类：$name')),
+      );
+    } else {
+      await provider.addParentCategory(
+        name: name,
+        type: _type,
+        icon: _icon,
+        color: _color,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已添加分类：$name')),
+      );
+    }
+    if (!mounted) return;
     Navigator.pop(context);
   }
 }

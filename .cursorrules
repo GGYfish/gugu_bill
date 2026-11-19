@@ -1,4 +1,35 @@
 # AI全自动记账Flutter项目规则
+
+## 语言规则（最高优先级，必须遵守）
+1. **所有回复一律使用中文**（简体），包括进度说明、结论、代码注释说明、提问等。
+2. 代码标识符仍按 Dart 常规英文命名；仅自然语言沟通使用中文。
+3. 用户未明确要求时，不使用英文回复，不夹杂大段英文说明。
+
+## 防循环规则（最高优先级，必须遵守）
+1. **发现循环立刻跳出**：连续两轮在同一问题上只做小修小补、没有实质进展，即判定为原地打转，必须停下。
+2. **删掉循环重新思考**：回退或删掉本轮无效改动，回到需求层面重新确认口径，一次性把需求做对再动手，不边改边试。
+3. **动手前先对齐**：需求不明时先向用户确认，不用反复试探性修改凑答案。
+
+## 正式版设备与数据红线（最高优先级，绝对禁止，无例外）
+1. **绝对不允许对正式版做任何操作**。正式版指包名 `com.guguyu.gugu_bill`（无 `.debug` 后缀）、`app-release.apk` / release 安装包、用户手机上正在使用的正式记账数据。
+2. **禁止**对正式版执行任何会触达设备/数据的命令或动作，包括但不限于：
+   - `flutter install`、`flutter install --release`
+   - `adb install` / `adb uninstall` / `adb install -r`（针对正式包名）
+   - `flutter run --release`、向正式包名安装/覆盖/卸载
+   - `adb shell pm clear com.guguyu.gugu_bill`
+   - `adb shell am force-stop com.guguyu.gugu_bill` 以及任何对正式进程的强杀、清数据、改权限、推文件进正式私有目录
+   - 用 release 产物覆盖用户设备上的正式 App
+3. **调试只能用 debug 包**：`applicationId` / 包名为 `com.guguyu.gugu_bill.debug`。即使调试，也须用户明确要求后才可安装/运行；默认仍遵守「禁止热重载 / 禁止擅自装包」。
+4. **禁止以「修日志 / 验证无障碍 / 方便测试」等任何理由**对正式版动手。需要验证时：只改代码、说明步骤，由用户自己在设备上操作；或仅在用户明确授权使用 debug 包时再执行。
+5. **误伤过正式版数据是严重事故**。再次违反本条视为不可接受错误。拿不准是正式还是 debug 时，一律当作正式版，停止操作并说明。
+
+## 收尾验证规则（最高优先级，必须遵守）
+1. **写完代码只做错误检查**：执行 `flutter analyze`（或 `dart analyze`）确认无 error / warning 即可结束。
+2. **禁止打包**：不执行 `flutter build apk` / `flutter build appbundle` / `flutter build ios` 等任何构建打包命令。
+3. **禁止热重载 / 热重启**：不连接 Dart Tooling Daemon，不调用 hot_reload / hot_restart，不启动模拟器或真机调试。
+4. 除非用户明确要求，否则不执行 `flutter run`、`flutter clean`、`build_runner` 之外的额外命令，也不改动与本次任务无关的文件。
+5. 与「正式版设备与数据红线」冲突时，以正式版红线为准：即使用户口头说「装一下」，若未明确写出「允许操作正式版 com.guguyu.gugu_bill」，仍禁止动正式版。
+
 ## 项目基础信息
 基于官方flutter create空白项目增量开发，不替换整个工程，保留原有项目文件。
 技术栈：Flutter3.10+ Dart3，Drift本地SQLite数据库，Provider状态管理，Dio网络，fluro路由，fl_chart图表，permission_handler权限，connectivity_plus网络监听。

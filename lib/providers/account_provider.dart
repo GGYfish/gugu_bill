@@ -1,3 +1,4 @@
+import 'package:decimal/decimal.dart';
 import 'package:flutter/foundation.dart';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
@@ -26,7 +27,7 @@ class AccountProvider extends ChangeNotifier {
   Future<void> addAccount({
     required String name,
     required String type,
-    double balance = 0.0,
+    Decimal? balance,
     String color = '#7C4DFF',
     String icon = 'wallet',
   }) async {
@@ -39,7 +40,7 @@ class AccountProvider extends ChangeNotifier {
         accountId: Value(uuid.v4()),
         name: Value(name),
         type: Value(type),
-        balance: Value(balance),
+        balance: Value((balance ?? Decimal.zero).toDouble()),
         color: Value(color),
         icon: Value(icon),
       ));

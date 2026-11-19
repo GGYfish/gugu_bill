@@ -17,6 +17,7 @@ import 'theme/app_colors_data.dart';
 
 import 'pages/home_page.dart';
 import 'pages/record_page.dart';
+import 'pages/gugu_ai_page.dart';
 import 'pages/debt_page.dart';
 import 'pages/statistics_page.dart';
 
@@ -83,11 +84,14 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
+
+  /// 顺序固定：首页、记一笔、咕咕鱼、负债、统计（始终展示，不随 AI 开关隐藏）
   static const int _recordTabIndex = 1;
 
   final List<Widget> _pages = const [
     HomePage(),
-    SizedBox.shrink(),
+    SizedBox.shrink(), // 记一笔走独立页面，不占栈内页
+    GuguAiPage(),
     DebtPage(),
     StatisticsPage(),
   ];
@@ -104,6 +108,7 @@ class _MainNavigationState extends State<MainNavigation> {
         selectedIndex: _currentIndex,
         backgroundColor: ext.surface,
         indicatorColor: ext.primary.withValues(alpha: 0.15),
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: _onTabTapped,
         destinations: [
           NavigationDestination(
@@ -117,14 +122,25 @@ class _MainNavigationState extends State<MainNavigation> {
             label: '记一笔',
           ),
           NavigationDestination(
-            icon: Icon(Icons.account_balance_wallet_outlined, color: ext.textSecondary),
-            selectedIcon: Icon(Icons.account_balance_wallet, color: ext.primary),
+            icon: Icon(Icons.auto_awesome_outlined, color: ext.textSecondary),
+            selectedIcon: Icon(Icons.auto_awesome, color: ext.primary),
+            label: '咕咕鱼',
+          ),
+          NavigationDestination(
+            icon: Icon(
+              Icons.account_balance_wallet_outlined,
+              color: ext.textSecondary,
+            ),
+            selectedIcon: Icon(
+              Icons.account_balance_wallet,
+              color: ext.primary,
+            ),
             label: '负债',
           ),
           NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined, color: ext.textSecondary),
             selectedIcon: Icon(Icons.bar_chart, color: ext.primary),
-            label: '数据统计',
+            label: '统计',
           ),
         ],
       ),

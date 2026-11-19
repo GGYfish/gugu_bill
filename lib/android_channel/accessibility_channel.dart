@@ -1,14 +1,18 @@
 import 'dart:async';
+import 'package:decimal/decimal.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../utils/money.dart';
 
-/// 无障碍服务数据模型
+/// 无障碍捕获的支付数据
 class AccessibilityPaymentData {
   final String appName;
-  final double amount;
+  final Decimal amount;
   final String detail;
   final int timestamp;
   final String source;
+  final String packageName;
+  final bool isIncome;
 
   AccessibilityPaymentData({
     required this.appName,
@@ -16,15 +20,19 @@ class AccessibilityPaymentData {
     required this.detail,
     required this.timestamp,
     required this.source,
+    required this.packageName,
+    required this.isIncome,
   });
 
   factory AccessibilityPaymentData.fromMap(Map<dynamic, dynamic> map) {
     return AccessibilityPaymentData(
       appName: map['appName']?.toString() ?? '',
-      amount: (map['amount'] as num?)?.toDouble() ?? 0.0,
+      amount: asDecimal(map['amount']),
       detail: map['detail']?.toString() ?? '',
       timestamp: (map['timestamp'] as num?)?.toInt() ?? 0,
       source: map['source']?.toString() ?? 'accessibility',
+      packageName: map['packageName']?.toString() ?? '',
+      isIncome: map['isIncome'] == true,
     );
   }
 }
@@ -43,73 +51,50 @@ class AccessibilityServiceState {
 
   factory AccessibilityServiceState.fromMap(Map<dynamic, dynamic> map) {
     return AccessibilityServiceState(
-      isEnabled: map['isEnabled'] ?? false,
-      isRunning: map['isRunning'] ?? false,
+      isEnabled: map['isEnabled'] == true,
+      isRunning: map['isRunning'] == true,
       serviceName: map['serviceName']?.toString() ?? '',
     );
   }
 }
 
-/// 无障碍服务通信通道
+/// 无障碍通信：MethodChannel（权限）+ EventChannel（支付事件）
 class AccessibilityChannel {
   static const _methodChannel = MethodChannel('com.aijizhang/accessibility');
   static const _eventChannel = EventChannel('com.aijizhang/accessibility_event');
 
-  // 单例
   static final AccessibilityChannel _instance = AccessibilityChannel._internal();
   factory AccessibilityChannel() => _instance;
   AccessibilityChannel._internal();
 
-  // Stream控制器
-  final _paymentController = StreamController<AccessibilityPaymentData>.broadcast();
-  final _serviceStateController = StreamController<bool>.broadcast();
+  final _paymentController =
+      StreamController<AccessibilityPaymentData>.broadcast();
 
-  /// 支付事件流
-  Stream<AccessibilityPaymentData> get paymentStream => _paymentController.stream;
-
-  /// 服务状态流
-  Stream<bool> get serviceStateStream => _serviceStateController.stream;
-
-  /// 当前支付数据（用于弹窗确认）
-  AccessibilityPaymentData? _lastPaymentData;
-  AccessibilityPaymentData? get lastPaymentData => _lastPaymentData;
+  Stream<AccessibilityPaymentData> get paymentStream =>
+      _paymentController.stream;
 
   bool _isInitialized = false;
 
-  /// 初始化
   void initialize() {
     if (_isInitialized) return;
     _isInitialized = true;
 
-    // 监听支付事件
     _eventChannel.receiveBroadcastStream().listen(
       (event) {
         if (event is Map) {
-          final data = AccessibilityPaymentData.fromMap(event);
-          _lastPaymentData = data;
-          _paymentController.add(data);
+          _paymentController.add(AccessibilityPaymentData.fromMap(event));
         }
       },
       onError: (error) {
         debugPrint('Accessibility EventChannel error: $error');
       },
     );
-
-    // 监听方法调用
-    _methodChannel.setMethodCallHandler((call) async {
-      switch (call.method) {
-        case 'onServiceStateChanged':
-          final isRunning = call.arguments['isRunning'] ?? false;
-          _serviceStateController.add(isRunning);
-          break;
-      }
-    });
   }
 
-  /// 检查无障碍服务是否启用
   Future<bool> isEnabled() async {
     try {
-      final result = await _methodChannel.invokeMethod<bool>('isAccessibilityServiceEnabled');
+      final result = await _methodChannel
+          .invokeMethod<bool>('isAccessibilityServiceEnabled');
       return result ?? false;
     } catch (e) {
       debugPrint('检查无障碍服务状态失败: $e');
@@ -117,27 +102,27 @@ class AccessibilityChannel {
     }
   }
 
-  /// 获取服务状态
   Future<AccessibilityServiceState> getServiceState() async {
     try {
-      final result = await _methodChannel.invokeMethod<Map>('getAccessibilityServiceState');
+      final result = await _methodChannel
+          .invokeMethod<Map>('getAccessibilityServiceState');
       if (result != null) {
         return AccessibilityServiceState.fromMap(result);
       }
     } catch (e) {
-      debugPrint('获取服务状态失败: $e');
+      debugPrint('获取无障碍服务状态失败: $e');
     }
     return AccessibilityServiceState(
       isEnabled: false,
       isRunning: false,
-      serviceName: 'com.example.demo_app/.BillAccessibilityService',
+      serviceName: '',
     );
   }
 
-  /// 打开无障碍设置页面
   Future<bool> openSettings() async {
     try {
-      final result = await _methodChannel.invokeMethod<bool>('openAccessibilitySettings');
+      final result =
+          await _methodChannel.invokeMethod<bool>('openAccessibilitySettings');
       return result ?? false;
     } catch (e) {
       debugPrint('打开无障碍设置失败: $e');
@@ -145,14 +130,7 @@ class AccessibilityChannel {
     }
   }
 
-  /// 清除最后一条支付数据
-  void clearLastPaymentData() {
-    _lastPaymentData = null;
-  }
-
-  /// 释放资源
   void dispose() {
     _paymentController.close();
-    _serviceStateController.close();
   }
 }

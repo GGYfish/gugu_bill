@@ -1,9 +1,11 @@
+import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
 import '../providers/liability_provider.dart';
 import '../ui_constants.dart';
+import '../utils/money.dart';
 import '../widgets/bank_selector.dart';
 import '../widgets/credit_institution_selector.dart';
 import '../database/database.dart';
@@ -87,7 +89,7 @@ class _AddLiabilityPageState extends State<AddLiabilityPage> {
   }
 
   bool get _canSubmit {
-    final amount = (double.tryParse(_amountController.text) ?? 0) > 0;
+    final amount = parseMoney(_amountController.text) > Decimal.zero;
     if (_selectedType == 'mortgage' || _selectedType == 'car_loan') {
       return amount && _selectedBank != null;
     }
@@ -124,9 +126,9 @@ class _AddLiabilityPageState extends State<AddLiabilityPage> {
   }
 
   /// 消费分期：总金额 = 月供 × 期数
-  double get _installmentTotalAmount {
-    final monthly = double.tryParse(_amountController.text) ?? 0;
-    return monthly * _installmentMonths;
+  Decimal get _installmentTotalAmount {
+    final monthly = parseMoney(_amountController.text);
+    return monthly * Decimal.fromInt(_installmentMonths);
   }
 
   /// 房贷/车贷：总期数（月），与 _installmentMonths 同结构
@@ -140,9 +142,9 @@ class _AddLiabilityPageState extends State<AddLiabilityPage> {
   }
 
   /// 房贷/车贷：总金额 = 月供 × 期数
-  double get _loanTotalAmount {
-    final monthly = double.tryParse(_amountController.text) ?? 0;
-    return monthly * _loanMonths;
+  Decimal get _loanTotalAmount {
+    final monthly = parseMoney(_amountController.text);
+    return monthly * Decimal.fromInt(_loanMonths);
   }
 
   // ============================================================
@@ -152,8 +154,8 @@ class _AddLiabilityPageState extends State<AddLiabilityPage> {
   /// - [closeAfter]=true：保存成功后关闭页面（"保存负债"按钮）
   /// - [closeAfter]=false：保存成功后清空表单、不关闭页面（"在记一笔"按钮）
   Future<void> _submit({bool closeAfter = true}) async {
-    final amount = double.tryParse(_amountController.text);
-    if (amount == null || amount <= 0) {
+    final amount = parseMoney(_amountController.text);
+    if (amount <= Decimal.zero) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(_selectedType == 'installment' ? '请输入正确的月供金额' : '请输入正确的负债金额'),
@@ -208,7 +210,7 @@ class _AddLiabilityPageState extends State<AddLiabilityPage> {
 
     // 月付类（消费分期/房贷/车贷）：自动计算总金额 = 月供 × 期数
     // 一次性负债（信用卡/月付信贷/私人借款）：直接用输入的本金
-    final double totalAmount;
+    final Decimal totalAmount;
     if (_selectedType == 'installment') {
       totalAmount = _installmentTotalAmount;
     } else if (_selectedType == 'mortgage' || _selectedType == 'car_loan') {
@@ -520,7 +522,7 @@ class _AddLiabilityPageState extends State<AddLiabilityPage> {
               child: Align(
                 alignment: Alignment.centerRight,
                 child: Text(
-                  '¥ ${_installmentTotalAmount.toStringAsFixed(2)}',
+                  '¥ ${formatMoney(_installmentTotalAmount)}',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
                 ),
               ),

@@ -10,10 +10,12 @@ class CategoryManagementProvider extends ChangeNotifier {
   List<LocalCategoriesData> _categories = [];
   List<LocalCategoriesData> _expenseCategories = [];
   List<LocalCategoriesData> _incomeCategories = [];
+  List<LocalCategoriesData> _otherCategories = [];
   // 顶级大分类
   List<LocalCategoriesData> _parentCategories = [];
   List<LocalCategoriesData> _expenseParentCategories = [];
   List<LocalCategoriesData> _incomeParentCategories = [];
+  List<LocalCategoriesData> _otherParentCategories = [];
   // 缓存子分类 Map<parentId, List<LocalCategoriesData>>
   Map<String, List<LocalCategoriesData>> _subCategoriesMap = {};
   bool _isLoading = false;
@@ -21,9 +23,11 @@ class CategoryManagementProvider extends ChangeNotifier {
   List<LocalCategoriesData> get categories => _categories;
   List<LocalCategoriesData> get expenseCategories => _expenseCategories;
   List<LocalCategoriesData> get incomeCategories => _incomeCategories;
+  List<LocalCategoriesData> get otherCategories => _otherCategories;
   List<LocalCategoriesData> get parentCategories => _parentCategories;
   List<LocalCategoriesData> get expenseParentCategories => _expenseParentCategories;
   List<LocalCategoriesData> get incomeParentCategories => _incomeParentCategories;
+  List<LocalCategoriesData> get otherParentCategories => _otherParentCategories;
   bool get isLoading => _isLoading;
 
   CategoryManagementProvider(AppDatabase db) : _db = db {
@@ -35,19 +39,24 @@ class CategoryManagementProvider extends ChangeNotifier {
       _categories = data;
       _expenseCategories = data.where((c) => c.type == 'expense').toList();
       _incomeCategories = data.where((c) => c.type == 'income').toList();
-      
+      _otherCategories = data.where((c) => c.type == 'other').toList();
+
       // 分离大分类和小分类
       _parentCategories = data.where((c) => c.parentId == null).toList();
-      _expenseParentCategories = _parentCategories.where((c) => c.type == 'expense').toList();
-      _incomeParentCategories = _parentCategories.where((c) => c.type == 'income').toList();
-      
+      _expenseParentCategories =
+          _parentCategories.where((c) => c.type == 'expense').toList();
+      _incomeParentCategories =
+          _parentCategories.where((c) => c.type == 'income').toList();
+      _otherParentCategories =
+          _parentCategories.where((c) => c.type == 'other').toList();
+
       // 构建子分类Map
       _subCategoriesMap = {};
       for (final parent in _parentCategories) {
         final subs = data.where((c) => c.parentId == parent.categoryId).toList();
         _subCategoriesMap[parent.categoryId] = subs;
       }
-      
+
       notifyListeners();
     });
   }
@@ -159,6 +168,7 @@ class CategoryManagementProvider extends ChangeNotifier {
 
   Future<void> updateCategory(String categoryId, {
     String? name,
+    String? type,
     String? icon,
     String? color,
     int? sortOrder,
@@ -171,12 +181,28 @@ class CategoryManagementProvider extends ChangeNotifier {
     try {
       await _db.updateCategory(categoryId, LocalCategoriesCompanion(
         name: name != null ? Value(name) : const Value.absent(),
+        type: type != null ? Value(type) : const Value.absent(),
         icon: icon != null ? Value(icon) : const Value.absent(),
         color: color != null ? Value(color) : const Value.absent(),
         sortOrder: sortOrder != null ? Value(sortOrder) : const Value.absent(),
         isEnabled: isEnabled != null ? Value(isEnabled) : const Value.absent(),
         parentId: parentId != null ? Value(parentId) : const Value.absent(),
       ));
+
+      // 大分类变更时，同步其下小分类的 type / icon / color（小分类创建时继承父分类）
+      if (type != null || icon != null || color != null) {
+        final subs = getSubCategories(categoryId);
+        for (final sub in subs) {
+          await _db.updateCategory(
+            sub.categoryId,
+            LocalCategoriesCompanion(
+              type: type != null ? Value(type) : const Value.absent(),
+              icon: icon != null ? Value(icon) : const Value.absent(),
+              color: color != null ? Value(color) : const Value.absent(),
+            ),
+          );
+        }
+      }
     } finally {
       _isLoading = false;
       notifyListeners();

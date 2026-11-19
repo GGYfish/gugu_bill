@@ -25,14 +25,14 @@ fun resolveKeystoreProp(name: String): String {
         ?: ""
 }
 
-val storeFilePath = resolveKeystoreProp("storeFile")
-val storePassword = resolveKeystoreProp("storePassword")
-val keyAlias = resolveKeystoreProp("keyAlias")
-val keyPassword = resolveKeystoreProp("keyPassword")
+val relStoreFilePath = resolveKeystoreProp("storeFile")
+val relStorePassword = resolveKeystoreProp("storePassword")
+val relKeyAlias = resolveKeystoreProp("keyAlias")
+val relKeyPassword = resolveKeystoreProp("keyPassword")
 
 val hasReleaseSigningMaterial =
-    storeFilePath.isNotBlank() && storePassword.isNotBlank() &&
-        keyAlias.isNotBlank() && keyPassword.isNotBlank()
+    relStoreFilePath.isNotBlank() && relStorePassword.isNotBlank() &&
+        relKeyAlias.isNotBlank() && relKeyPassword.isNotBlank()
 
 android {
     namespace = "com.guguyu.gugu_bill"
@@ -60,17 +60,17 @@ android {
         create("release") {
             if (hasReleaseSigningMaterial) {
                 // storeFile 支持相对路径(相对 android/ 目录)
-                val sfFile = if (storeFilePath.startsWith("/") ||
-                    storeFilePath.contains(":")
+                val sfFile = if (relStoreFilePath.startsWith("/") ||
+                    relStoreFilePath.contains(":")
                 ) {
-                    file(storeFilePath)
+                    file(relStoreFilePath)
                 } else {
-                    rootProject.file(storeFilePath)
+                    rootProject.file(relStoreFilePath)
                 }
                 storeFile = sfFile
-                this.storePassword = storePassword
-                this.keyAlias = keyAlias
-                this.keyPassword = keyPassword
+                storePassword = relStorePassword
+                keyAlias = relKeyAlias
+                keyPassword = relKeyPassword
             }
             // 无凭据时不报错,buildTypes.release 会自动降级到 debug
         }

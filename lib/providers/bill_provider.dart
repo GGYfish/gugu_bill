@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:decimal/decimal.dart';
 import 'package:flutter/foundation.dart';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
@@ -29,10 +30,10 @@ class BillProvider extends ChangeNotifier {
   int _unconfirmedCount = 0;
 
   // ---- 顶部汇总 ----
-  Map<String, double> _summary = {
-    'todayExpense': 0.0,
-    'monthExpense': 0.0,
-    'monthIncome': 0.0,
+  Map<String, Decimal> _summary = {
+    'todayExpense': Decimal.zero,
+    'monthExpense': Decimal.zero,
+    'monthIncome': Decimal.zero,
   };
 
   StreamSubscription? _countSub;
@@ -140,7 +141,7 @@ class BillProvider extends ChangeNotifier {
   /// 如果传入了 liabilityId，会同时创建对应的还款记录
   Future<bool> addBill({
     required String type,
-    required double amount,
+    required Decimal amount,
     required String accountId,
     String? categoryId,
     String? categoryName,
@@ -161,7 +162,7 @@ class BillProvider extends ChangeNotifier {
       final bill = LocalBillsCompanion(
         billId: Value(billId),
         type: Value(type),
-        amount: Value(amount),
+        amount: Value(amount.toDouble()),
         accountId: Value(accountId),
         categoryId: Value(categoryId),
         categoryName: Value(categoryName),
@@ -211,7 +212,7 @@ class BillProvider extends ChangeNotifier {
   Future<void> updateBill({
     required String billId,
     required String type,
-    required double amount,
+    required Decimal amount,
     required String accountId,
     String? categoryId,
     String? categoryName,
@@ -225,7 +226,7 @@ class BillProvider extends ChangeNotifier {
     try {
       await _db.updateBill(billId, LocalBillsCompanion(
         type: Value(type),
-        amount: Value(amount),
+        amount: Value(amount.toDouble()),
         accountId: Value(accountId),
         categoryId: Value(categoryId),
         categoryName: Value(categoryName),

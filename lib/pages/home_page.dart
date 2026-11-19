@@ -1,3 +1,5 @@
+import 'package:decimal/decimal.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -6,6 +8,7 @@ import '../providers/bill_provider.dart';
 import '../providers/category_provider.dart';
 import '../database/database.dart';
 import '../ui_constants.dart';
+import '../utils/money.dart';
 import 'record_page.dart';
 import 'setting_page.dart';
 
@@ -16,7 +19,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _showAmount = true;
   final ScrollController _scrollController = ScrollController();
 
@@ -28,13 +31,75 @@ class _HomePageState extends State<HomePage> {
   OverlayEntry? _menuOverlay;
   Offset _menuPosition = Offset.zero;
 
+  /// 强制停止后引导弹窗：同一轮失效只弹一次，恢复后可再弹
+  bool _forceStopGuideShown = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       // 进入首页时确保最新数据
       context.read<BillProvider>().refresh();
+      await context.read<AppProvider>().refreshPermissions();
+      if (mounted) _maybeShowForceStopGuide();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      context.read<AppProvider>().refreshPermissions().then((_) {
+        if (mounted) _maybeShowForceStopGuide();
+      });
+    }
+  }
+
+  void _maybeShowForceStopGuide() {
+    final app = context.read<AppProvider>();
+    final broken = app.needsAccessibilityReenable || app.needsNotificationReenable;
+    if (!broken) {
+      _forceStopGuideShown = false;
+      return;
+    }
+    if (_forceStopGuideShown) return;
+    _forceStopGuideShown = true;
+
+    final needA11y = app.needsAccessibilityReenable;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('自动记账已中断'),
+          content: Text(
+            needA11y
+                ? '检测到应用曾被强制停止或系统清理。'
+                    'Android 会关掉无障碍服务，无法自动恢复，需要您手动再开一次。\n\n'
+                    '点「去开启」进入无障碍设置，找到本应用重新打开开关。'
+                : '通知使用权已失效，自动记账无法继续。'
+                    '请重新授权通知使用权。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('稍后'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                if (needA11y) {
+                  await app.openAccessibilitySettings();
+                } else {
+                  await app.openNotificationListenerSettings();
+                }
+              },
+              child: const Text('去开启'),
+            ),
+          ],
+        ),
+      );
     });
   }
 
@@ -49,6 +114,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _removeMenu();
     _scrollController.dispose();
     super.dispose();
@@ -389,9 +455,9 @@ class _HomePageState extends State<HomePage> {
     return Consumer<BillProvider>(
       builder: (context, bill, _) {
         final summary = bill.summary;
-        final todayExpense = (summary['todayExpense'] ?? 98.88).toDouble();
-        final monthExpense = (summary['monthExpense'] ?? 598.98).toDouble();
-        final monthIncome = (summary['monthIncome'] ?? 45.00).toDouble();
+        final todayExpense = formatMoney(asDecimal(summary['todayExpense'] ?? Decimal.zero));
+        final monthExpense = formatMoney(asDecimal(summary['monthExpense'] ?? Decimal.zero));
+        final monthIncome = formatMoney(asDecimal(summary['monthIncome'] ?? Decimal.zero));
 
         return Container(
           margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -424,7 +490,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  _showAmount ? todayExpense.toStringAsFixed(2) : '***',
+                  _showAmount ? todayExpense : '***',
                   style: AppTextStyles.moneyLarge,
                 ),
                 const SizedBox(height: 16),
@@ -438,7 +504,7 @@ class _HomePageState extends State<HomePage> {
                           const Text('本月支出（元）', style: TextStyle(color: Colors.white70, fontSize: 12)),
                           const SizedBox(height: 4),
                           Text(
-                            _showAmount ? monthExpense.toStringAsFixed(2) : '***',
+                            _showAmount ? monthExpense : '***',
                             style: AppTextStyles.moneyMedium,
                           ),
                         ],
@@ -455,7 +521,7 @@ class _HomePageState extends State<HomePage> {
                             const Text('本月收入（元）', style: TextStyle(color: Colors.white70, fontSize: 12)),
                             const SizedBox(height: 4),
                             Text(
-                              _showAmount ? monthIncome.toStringAsFixed(2) : '***',
+                              _showAmount ? monthIncome : '***',
                               style: AppTextStyles.moneyMedium,
                             ),
                           ],
@@ -473,20 +539,31 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildAutoRecordStatus() {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return const SizedBox.shrink();
+    }
     return Consumer<AppProvider>(
       builder: (context, app, _) {
-        // 计算权限状态（通知栏监听已移除）
         final hasAccessibility = app.accessibilityPermissionGranted;
-        final anyEnabled = app.accessibilityAutoRecordEnabled;
-        
-        // 计算状态颜色和文字
+        final hasNotification = app.notificationPermissionGranted;
+        final anyEnabled = app.anyAutoRecordEnabled;
+        final hasAnyPermission = hasAccessibility || hasNotification;
+        final needA11y = app.needsAccessibilityReenable;
+        final needNotif = app.needsNotificationReenable;
+
         Color statusColor;
         String statusText;
         IconData statusIcon;
-        
-        if (!hasAccessibility) {
+
+        if (needA11y || needNotif) {
           statusColor = Colors.red;
-          statusText = '请授权无障碍服务以开启自动记账';
+          statusText = needA11y
+              ? '无障碍已被系统关闭（多为强制停止），点此重新开启'
+              : '通知使用权已失效，点此重新开启';
+          statusIcon = Icons.warning_amber;
+        } else if (!hasAnyPermission) {
+          statusColor = Colors.red;
+          statusText = '请授权通知使用权或无障碍以开启自动记账';
           statusIcon = Icons.warning_amber;
         } else if (!anyEnabled) {
           statusColor = Colors.grey;
@@ -494,15 +571,30 @@ class _HomePageState extends State<HomePage> {
           statusIcon = Icons.auto_awesome_outlined;
         } else {
           statusColor = Colors.purple;
-          statusText = '自动记账已开启（无障碍）';
+          final modes = <String>[
+            if (app.notificationAutoRecordEnabled) '通知栏',
+            if (app.accessibilityAutoRecordEnabled) '无障碍',
+          ];
+          statusText = '自动记账已开启（${modes.join(' + ')}）';
           statusIcon = Icons.auto_awesome;
         }
         
         return GestureDetector(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const SettingPage()),
-          ),
+          onTap: () async {
+            if (needA11y) {
+              await app.openAccessibilitySettings();
+              return;
+            }
+            if (needNotif) {
+              await app.openNotificationListenerSettings();
+              return;
+            }
+            if (!context.mounted) return;
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SettingPage()),
+            );
+          },
           child: Container(
             margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -527,22 +619,31 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      // 权限状态指示
                       Row(
                         children: [
+                          _buildPermissionBadge('通知栏', hasNotification),
+                          const SizedBox(width: 6),
                           _buildPermissionBadge('无障碍', hasAccessibility),
                         ],
                       ),
                     ],
                   ),
                 ),
-                // 快捷授权按钮
+                if (hasNotification && !app.notificationAutoRecordEnabled)
+                  _buildQuickToggle(
+                    icon: Icons.notifications_active,
+                    color: Colors.orange,
+                    tooltip: '开启通知栏记账',
+                    onPressed: () =>
+                        app.setNotificationAutoRecordEnabled(true),
+                  ),
                 if (hasAccessibility && !app.accessibilityAutoRecordEnabled)
                   _buildQuickToggle(
                     icon: Icons.accessibility_new,
                     color: Colors.purple,
                     tooltip: '开启无障碍记账',
-                    onPressed: () => app.setAccessibilityAutoRecordEnabled(true),
+                    onPressed: () =>
+                        app.setAccessibilityAutoRecordEnabled(true),
                   ),
                 Icon(Icons.chevron_right, color: Colors.grey[400], size: 20),
               ],
@@ -736,13 +837,13 @@ class _HomePageState extends State<HomePage> {
           .replaceAll('Sunday', '星期日');
     }
 
-    double totalExpense = 0;
-    double totalIncome = 0;
+    Decimal totalExpense = Decimal.zero;
+    Decimal totalIncome = Decimal.zero;
     for (final b in group.bills) {
       if (b.type == 'expense') {
-        totalExpense += b.amount;
+        totalExpense += decimalOf(b.amount);
       } else {
-        totalIncome += b.amount;
+        totalIncome += decimalOf(b.amount);
       }
     }
 
@@ -767,7 +868,7 @@ class _HomePageState extends State<HomePage> {
           ),
           const Spacer(),
           Text(
-            '支${totalExpense.toStringAsFixed(2)}  收${totalIncome.toStringAsFixed(2)}',
+            '支${formatMoney(totalExpense)}  收${formatMoney(totalIncome)}',
             style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
         ],
@@ -775,10 +876,25 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// 列表备注：有「规格：」时只展示其后内容，否则展示原备注
+  String? _displayRemark(String? remark) {
+    final raw = remark?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    for (final marker in ['规格：', '规格:']) {
+      final i = raw.indexOf(marker);
+      if (i >= 0) {
+        final body = raw.substring(i + marker.length).trim();
+        return body.isEmpty ? null : body;
+      }
+    }
+    return raw;
+  }
+
   Widget _buildBillItem(LocalBillsData bill, DateTime groupDate, CategoryProvider categoryProvider) {
     // 获取分类图标和颜色（应用"子分类展示大分类"语义）
     final categoryInfo = categoryProvider.getCategoryIconAndColor(bill);
     final isSelected = _selectedBillIds.contains(bill.billId);
+    final remarkText = _displayRemark(bill.remark);
 
     return Column(
       children: [
@@ -830,7 +946,7 @@ class _HomePageState extends State<HomePage> {
                     child: Icon(categoryInfo.icon, color: categoryInfo.color, size: 20),
                   ),
                   const SizedBox(width: 12),
-                  // 分类名称 + 时间
+                  // 分类名称 + 备注 + 时间
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -839,6 +955,19 @@ class _HomePageState extends State<HomePage> {
                           bill.categoryName ?? '未分类',
                           style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.textPrimary),
                         ),
+                        if (remarkText != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            remarkText,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 2),
                         Text(
                           DateFormat('HH:mm').format(bill.billTime),

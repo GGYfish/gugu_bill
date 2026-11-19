@@ -5,47 +5,53 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 
 /**
- * EventChannel用于实时发送无障碍服务捕获的支付事件
+ * 无障碍支付事件 → Dart
  */
 object AccessibilityEventChannel {
-    
+
     private const val TAG = "AccessibilityEventChannel"
     private const val CHANNEL = "com.aijizhang/accessibility_event"
-    
+
     private var eventSink: EventChannel.EventSink? = null
-    private var eventChannel: EventChannel? = null
-    
-    /**
-     * 注册EventChannel
-     */
+    private val pendingEvents = mutableListOf<Map<String, Any>>()
+
     fun register(flutterEngine: FlutterEngine) {
         try {
-            eventChannel = EventChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
-            eventChannel?.setStreamHandler(object : EventChannel.StreamHandler {
-                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-                    eventSink = events
-                    Log.d(TAG, "EventChannel已连接")
-                }
-                
-                override fun onCancel(arguments: Any?) {
-                    eventSink = null
-                    Log.d(TAG, "EventChannel已断开")
-                }
-            })
+            EventChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+                .setStreamHandler(object : EventChannel.StreamHandler {
+                    override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                        eventSink = events
+                        Log.d(TAG, "EventChannel 已连接")
+                        if (pendingEvents.isNotEmpty()) {
+                            val copy = pendingEvents.toList()
+                            pendingEvents.clear()
+                            copy.forEach { events?.success(it) }
+                        }
+                    }
+
+                    override fun onCancel(arguments: Any?) {
+                        eventSink = null
+                        Log.d(TAG, "EventChannel 已断开")
+                    }
+                })
         } catch (e: Exception) {
-            Log.e(TAG, "注册EventChannel失败: ${e.message}")
+            Log.e(TAG, "注册失败: ${e.message}")
         }
     }
-    
-    /**
-     * 发送支付事件
-     */
+
     fun sendPaymentEvent(data: Map<String, Any>) {
         try {
-            eventSink?.success(data)
-            Log.d(TAG, "发送支付事件成功: $data")
+            val sink = eventSink
+            if (sink != null) {
+                sink.success(data)
+                Log.d(TAG, "发送支付事件: $data")
+            } else {
+                pendingEvents.add(data)
+                if (pendingEvents.size > 30) pendingEvents.removeAt(0)
+                Log.d(TAG, "EventSink 为空，已缓存 size=${pendingEvents.size}")
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "发送支付事件失败: ${e.message}")
+            Log.e(TAG, "发送失败: ${e.message}")
         }
     }
 }

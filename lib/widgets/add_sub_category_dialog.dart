@@ -17,22 +17,112 @@ Future<void> showAddSubCategoryDialog(
   required IconData parentIcon,
   required Color parentColor,
 }) async {
-  final nameCtrl = TextEditingController();
-  final formKey = GlobalKey<FormState>();
+  final name = await showDialog<String>(
+    context: context,
+    builder: (ctx) => _SubCategoryNameDialog(
+      title: '添加小分类',
+      subtitle: '为「$parentName」新增',
+      confirmLabel: '确认添加',
+      parentIcon: parentIcon,
+      parentColor: parentColor,
+    ),
+  );
 
-  void doConfirm(BuildContext ctx) {
-    if (!(formKey.currentState?.validate() ?? false)) return;
-    Provider.of<CategoryManagementProvider>(ctx, listen: false)
-        .addSubCategory(
-      parentId: parentId,
-      name: nameCtrl.text.trim(),
-    );
-    Navigator.of(ctx).pop(true);
+  if (name == null || name.isEmpty) return;
+  if (!context.mounted) return;
+
+  // 先关弹窗再写库，避免 notifyListeners 重建列表时弹窗还在树里导致 InheritedWidget 断言
+  await context.read<CategoryManagementProvider>().addSubCategory(
+        parentId: parentId,
+        name: name,
+      );
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('已添加小分类：$name')),
+  );
+}
+
+/// 编辑小分类名称对话框
+Future<void> showEditSubCategoryDialog(
+  BuildContext context, {
+  required String categoryId,
+  required String initialName,
+  required String parentName,
+  required IconData parentIcon,
+  required Color parentColor,
+}) async {
+  final name = await showDialog<String>(
+    context: context,
+    builder: (ctx) => _SubCategoryNameDialog(
+      title: '编辑小分类',
+      subtitle: '所属「$parentName」',
+      confirmLabel: '保存修改',
+      initialName: initialName,
+      parentIcon: parentIcon,
+      parentColor: parentColor,
+    ),
+  );
+
+  if (name == null || name.isEmpty) return;
+  if (!context.mounted) return;
+
+  await context.read<CategoryManagementProvider>().updateCategory(
+        categoryId,
+        name: name,
+      );
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('已更新小分类：$name')),
+  );
+}
+
+/// 小分类名称输入弹窗（Stateful，正确管理 TextEditingController 生命周期）
+class _SubCategoryNameDialog extends StatefulWidget {
+  final String title;
+  final String subtitle;
+  final String confirmLabel;
+  final String? initialName;
+  final IconData parentIcon;
+  final Color parentColor;
+
+  const _SubCategoryNameDialog({
+    required this.title,
+    required this.subtitle,
+    required this.confirmLabel,
+    required this.parentIcon,
+    required this.parentColor,
+    this.initialName,
+  });
+
+  @override
+  State<_SubCategoryNameDialog> createState() => _SubCategoryNameDialogState();
+}
+
+class _SubCategoryNameDialogState extends State<_SubCategoryNameDialog> {
+  late final TextEditingController _nameCtrl;
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: widget.initialName ?? '');
   }
 
-  final added = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  void _confirm() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    // 只把名称带回，写库在弹窗外执行
+    Navigator.of(context).pop(_nameCtrl.text.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
       backgroundColor: AppColors.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -46,11 +136,11 @@ Future<void> showAddSubCategoryDialog(
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: parentColor,
+              color: widget.parentColor,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
-              parentIcon,
+              widget.parentIcon,
               color: Colors.white,
               size: 20,
             ),
@@ -62,7 +152,7 @@ Future<void> showAddSubCategoryDialog(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  '添加小分类',
+                  widget.title,
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -71,7 +161,7 @@ Future<void> showAddSubCategoryDialog(
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '为「$parentName」新增',
+                  widget.subtitle,
                   style: TextStyle(
                     fontSize: 12,
                     color: AppColors.textTertiary,
@@ -83,10 +173,10 @@ Future<void> showAddSubCategoryDialog(
         ],
       ),
       content: Form(
-        key: formKey,
+        key: _formKey,
         child: TextFormField(
-          controller: nameCtrl,
-          autofocus: false,
+          controller: _nameCtrl,
+          autofocus: widget.initialName != null,
           maxLength: 8,
           textInputAction: TextInputAction.done,
           decoration: InputDecoration(
@@ -112,16 +202,16 @@ Future<void> showAddSubCategoryDialog(
             if (v == null || v.trim().isEmpty) return '请输入小分类名称';
             return null;
           },
-          onFieldSubmitted: (_) => doConfirm(ctx),
+          onFieldSubmitted: (_) => _confirm(),
         ),
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(ctx).pop(false),
+          onPressed: () => Navigator.of(context).pop(),
           child: Text('取消', style: TextStyle(color: AppColors.textSecondary)),
         ),
         ElevatedButton(
-          onPressed: () => doConfirm(ctx),
+          onPressed: _confirm,
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
@@ -130,16 +220,9 @@ Future<void> showAddSubCategoryDialog(
               borderRadius: BorderRadius.circular(8),
             ),
           ),
-          child: const Text('确认添加'),
+          child: Text(widget.confirmLabel),
         ),
       ],
-    ),
-  );
-
-  if (added == true && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已添加小分类：${nameCtrl.text.trim()}')),
     );
   }
-  nameCtrl.dispose();
 }

@@ -5,12 +5,41 @@ import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 import '../services/backup_service.dart';
 import '../ui_constants.dart';
+import 'ai_settings_page.dart';
 import 'resource_management_page.dart';
 import 'theme_center_page.dart';
 
 /// 设置页面
-class SettingPage extends StatelessWidget {
+class SettingPage extends StatefulWidget {
   const SettingPage({super.key});
+
+  @override
+  State<SettingPage> createState() => _SettingPageState();
+}
+
+class _SettingPageState extends State<SettingPage> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AppProvider>().refreshPermissions();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      context.read<AppProvider>().refreshPermissions();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,32 +59,76 @@ class SettingPage extends StatelessWidget {
               // ===== 自动记账 =====
               _SectionTitle(title: '自动记账'),
               const SizedBox(height: 8),
-              // 通知栏自动记账（已禁用）
+              // 通知栏自动记账
               _AutoRecordSwitch(
                 app: app,
                 title: '通知栏自动记账',
-                subtitle: '功能已移除',
+                subtitle: app.notificationPermissionGranted
+                    ? '读取支付通知后直接记账并提示'
+                    : '需要开启通知使用权',
                 icon: Icons.notifications_active,
-                iconColor: Colors.grey,
-                enabled: false,
-                hasPermission: false,
-                onToggle: (_) {},
-                onRequestPermission: () {},
+                iconColor: AppColors.primary,
+                enabled: app.notificationAutoRecordEnabled,
+                hasPermission: app.notificationPermissionGranted,
+                onToggle: (v) => _onNotificationToggle(context, app, v),
+                onRequestPermission: () => app.requestNotificationPermission(),
               ),
               const SizedBox(height: 12),
               // 无障碍自动记账
               _AutoRecordSwitch(
                 app: app,
                 title: '无障碍自动记账',
-                subtitle: app.accessibilityPermissionGranted
-                    ? '读取屏幕内容获取支付信息（更全面）'
-                    : '需要无障碍服务权限',
+                subtitle: app.needsAccessibilityReenable
+                    ? '服务未运行（强制停止后需手动重开无障碍）'
+                    : app.accessibilityPermissionGranted
+                        ? (app.accessibilityServiceRunning
+                            ? '读取屏幕内容后直接记账并提示'
+                            : '已授权但服务未运行，请点开关旁权限重开')
+                        : '需要无障碍服务权限',
                 icon: Icons.accessibility_new,
                 iconColor: AppColors.primary,
                 enabled: app.accessibilityAutoRecordEnabled,
-                hasPermission: app.accessibilityPermissionGranted,
+                hasPermission: app.accessibilityPermissionGranted &&
+                    app.accessibilityServiceRunning,
                 onToggle: (v) => _onAccessibilityToggle(context, app, v),
                 onRequestPermission: () => app.requestAccessibilityPermission(),
+              ),
+              const SizedBox(height: 12),
+              _ManagementTile(
+                icon: Icons.battery_saver,
+                iconColor: app.ignoringBatteryOptimizations
+                    ? Colors.green
+                    : Colors.orange,
+                title: '忽略电池优化',
+                subtitle: app.ignoringBatteryOptimizations
+                    ? '已忽略，后台更不易被系统杀掉'
+                    : '建议开启，否则国产机可能清理自动记账',
+                onTap: () => _onBatteryOptimizationTap(context, app),
+              ),
+              if (app.anyAutoRecordEnabled) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '已开启前台常驻通知保活，通知栏会显示「自动记账运行中」。\n'
+                  '注意：在系统设置里「强制停止」后，无障碍会被系统关掉，'
+                  '必须重新打开本应用并手动再开一次无障碍，无法静默恢复。',
+                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+              ],
+
+              const SizedBox(height: 24),
+
+              // ===== AI =====
+              _SectionTitle(title: '咕咕鱼 AI'),
+              const SizedBox(height: 8),
+              _ManagementTile(
+                icon: Icons.auto_awesome,
+                iconColor: AppColors.primary,
+                title: 'AI 设置',
+                subtitle: 'DeepSeek：填写 API Key（模型固定 deepseek-flash）',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AiSettingsPage()),
+                ),
               ),
 
               const SizedBox(height: 24),
@@ -142,20 +215,58 @@ class SettingPage extends StatelessWidget {
     );
   }
 
-  Future<void> _onAccessibilityToggle(
+  Future<void> _onBatteryOptimizationTap(
+    BuildContext context,
+    AppProvider app,
+  ) async {
+    if (app.ignoringBatteryOptimizations) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已处于忽略电池优化状态')),
+      );
+      return;
+    }
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('忽略电池优化'),
+        content: const Text(
+          '为了自动记账在后台更稳定，建议允许本应用「不受电池优化限制」。\n\n'
+          '部分国产手机还需在系统设置里打开：自启动 / 后台运行 / 锁定任务。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('去开启'),
+          ),
+        ],
+      ),
+    );
+    if (go == true) {
+      await app.ensureBatteryOptimizationIgnored();
+      if (!app.ignoringBatteryOptimizations) {
+        await app.openBatteryOptimizationSettings();
+      }
+    }
+  }
+
+  Future<void> _onNotificationToggle(
     BuildContext context,
     AppProvider app,
     bool v,
   ) async {
     if (v) {
-      if (!app.accessibilityPermissionGranted) {
+      if (!app.notificationPermissionGranted) {
         final result = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('需要无障碍服务权限'),
+            title: const Text('需要通知使用权'),
             content: const Text(
-              '无障碍自动记账需要您开启无障碍服务。\n\n'
-              '请在设置中开启「无障碍服务」并授权本应用。',
+              '通知栏自动记账需要开启「通知使用权」。\n\n'
+              '请在系统设置中找到本应用并授权。开启后将直接记账并提示，不再弹确认框。',
             ),
             actions: [
               TextButton(
@@ -170,7 +281,51 @@ class SettingPage extends StatelessWidget {
           ),
         );
         if (result == true) {
-          await app.requestAccessibilityPermission();
+          final granted = await app.requestNotificationPermission();
+          if (granted) {
+            await app.setNotificationAutoRecordEnabled(true);
+          }
+        }
+        return;
+      }
+      await app.setNotificationAutoRecordEnabled(true);
+    } else {
+      await app.setNotificationAutoRecordEnabled(false);
+    }
+  }
+
+  Future<void> _onAccessibilityToggle(
+    BuildContext context,
+    AppProvider app,
+    bool v,
+  ) async {
+    if (v) {
+      if (!app.accessibilityPermissionGranted) {
+        final result = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('需要无障碍服务权限'),
+            content: const Text(
+              '无障碍自动记账需要您开启无障碍服务。\n\n'
+              '请在设置中开启「无障碍服务」并授权本应用。开启后将直接记账并提示，不再弹确认框。',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('暂不开启'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('去开启'),
+              ),
+            ],
+          ),
+        );
+        if (result == true) {
+          final granted = await app.requestAccessibilityPermission();
+          if (granted) {
+            await app.setAccessibilityAutoRecordEnabled(true);
+          }
         }
         return;
       }
@@ -437,14 +592,17 @@ class _AutoRecordSwitch extends StatelessWidget {
               ],
             ),
           ),
-          if (!hasPermission && enabled == false)
+          if (!hasPermission)
             TextButton(
               onPressed: onRequestPermission,
               style: TextButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 minimumSize: Size.zero,
               ),
-              child: const Text('授权', style: TextStyle(fontSize: 13)),
+              child: Text(
+                enabled ? '重新开启' : '授权',
+                style: const TextStyle(fontSize: 13),
+              ),
             ),
           Switch(
             value: enabled,

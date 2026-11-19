@@ -1,11 +1,15 @@
 package com.guguyu.gugu_bill
 
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.ComponentName
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.PowerManager
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Log
@@ -19,17 +23,16 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     
     private val ACCESSIBILITY_CHANNEL = "com.aijizhang/accessibility"
+    private val NOTIFICATION_CHANNEL = "com.aijizhang/notification"
+    private val KEEPALIVE_CHANNEL = "com.aijizhang/keepalive"
     private val BACKUP_CHANNEL = "com.aijizhang/backup"
     
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         
-        // 设置FlutterEngine到MethodChannelWrapper供无障碍服务使用
-        MethodChannelWrapper.flutterEngine = flutterEngine
-        MethodChannelWrapper.initEventChannel(flutterEngine)
-        
-        // 注册无障碍服务事件通道
+        // 注册事件通道（无障碍 / 通知栏）
         AccessibilityEventChannel.register(flutterEngine)
+        NotificationEventChannel.register(flutterEngine)
 
         // 注册备份保存 MethodChannel（保存到公共 Downloads 目录）
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BACKUP_CHANNEL).setMethodCallHandler { call, result ->
@@ -47,6 +50,116 @@ class MainActivity : FlutterActivity() {
                         result.success(saved)
                     } else {
                         result.error("SAVE_FAILED", "保存到公共 Downloads 失败", null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        // 保活 / 电池优化 MethodChannel
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, KEEPALIVE_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "syncAutoRecordFlags" -> {
+                    val notification = call.argument<Boolean>("notification") ?: false
+                    val accessibility = call.argument<Boolean>("accessibility") ?: false
+                    AutoRecordPrefs.sync(this, notification, accessibility)
+                    result.success(true)
+                }
+                "startKeepAlive" -> {
+                    AutoRecordKeepAliveService.start(this)
+                    result.success(true)
+                }
+                "stopKeepAlive" -> {
+                    AutoRecordKeepAliveService.stop(this)
+                    result.success(true)
+                }
+                "isIgnoringBatteryOptimizations" -> {
+                    result.success(isIgnoringBatteryOptimizations())
+                }
+                "requestIgnoreBatteryOptimizations" -> {
+                    try {
+                        if (isIgnoringBatteryOptimizations()) {
+                            result.success(true)
+                            return@setMethodCallHandler
+                        }
+                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("BATTERY_ERROR", "无法请求忽略电池优化: ${e.message}", null)
+                    }
+                }
+                "openBatteryOptimizationSettings" -> {
+                    try {
+                        // 优先打开本应用详情；失败再退回列表
+                        try {
+                            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                            startActivity(intent)
+                        } catch (_: Exception) {
+                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.parse("package:$packageName")
+                            }
+                            startActivity(intent)
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("BATTERY_ERROR", "无法打开电池优化设置: ${e.message}", null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        // 通知栏监听 + 本地通知 MethodChannel
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTIFICATION_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isNotificationListenerEnabled" -> {
+                    result.success(checkNotificationListenerEnabled())
+                }
+                "openNotificationListenerSettings" -> {
+                    try {
+                        val intent = android.content.Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("SETTINGS_ERROR", "无法打开通知使用权设置: ${e.message}", null)
+                    }
+                }
+                "showLocalNotification" -> {
+                    try {
+                        val title = call.argument<String>("title") ?: "咕咕鱼记账"
+                        val body = call.argument<String>("body") ?: ""
+                        LocalNotifyHelper.show(this, title, body)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("NOTIFY_ERROR", "发送通知失败: ${e.message}", null)
+                    }
+                }
+                "requestPostNotificationsPermission" -> {
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1002)
+                            result.success(true)
+                        } else {
+                            result.success(true)
+                        }
+                    } catch (e: Exception) {
+                        result.error("PERMISSION_ERROR", "请求通知权限失败: ${e.message}", null)
+                    }
+                }
+                "hasPostNotificationsPermission" -> {
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            val granted = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                                PackageManager.PERMISSION_GRANTED
+                            result.success(granted)
+                        } else {
+                            result.success(true)
+                        }
+                    } catch (e: Exception) {
+                        result.error("PERMISSION_ERROR", "检查通知权限失败: ${e.message}", null)
                     }
                 }
                 else -> result.notImplemented()
@@ -98,9 +211,10 @@ class MainActivity : FlutterActivity() {
                 }
                 
                 "getAccessibilityServiceState" -> {
+                    val cn = ComponentName(this, BillAccessibilityService::class.java)
                     result.success(mapOf(
                         "isEnabled" to checkAccessibilityServiceEnabled(),
-                        "serviceName" to "com.guguyu.gugu_bill/.BillAccessibilityService",
+                        "serviceName" to cn.flattenToString(),
                         "isRunning" to (BillAccessibilityService.instance != null)
                     ))
                 }
@@ -112,17 +226,51 @@ class MainActivity : FlutterActivity() {
         }
     }
     
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            pm.isIgnoringBatteryOptimizations(packageName)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "检查电池优化失败: ${e.message}")
+            false
+        }
+    }
+
     /**
-     * 检查无障碍服务是否启用
+     * 检查无障碍服务是否启用（兼容 debug 包名后缀）
      */
     private fun checkAccessibilityServiceEnabled(): Boolean {
-        val accessibilityManager = getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+        val accessibilityManager =
+            getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
         val enabledServices = accessibilityManager.getEnabledAccessibilityServiceList(
-            AccessibilityServiceInfo.FEEDBACK_GENERIC
+            AccessibilityServiceInfo.FEEDBACK_ALL_MASK
         )
+        val expected = ComponentName(this, BillAccessibilityService::class.java)
+        val expectedFlat = expected.flattenToString()
+        return enabledServices.any { info ->
+            val id = info.id ?: return@any false
+            ComponentName.unflattenFromString(id)?.equals(expected) == true ||
+                id == expectedFlat ||
+                id.endsWith("/.BillAccessibilityService") ||
+                id.endsWith("/${BillAccessibilityService::class.java.name}")
+        }
+    }
 
-        val serviceName = "com.guguyu.gugu_bill/.BillAccessibilityService"
-        return enabledServices.any { it.id == serviceName }
+    /**
+     * 检查通知使用权（NotificationListenerService）是否已授权
+     */
+    private fun checkNotificationListenerEnabled(): Boolean {
+        val cn = ComponentName(this, BillNotificationListenerService::class.java)
+        val flat = Settings.Secure.getString(
+            contentResolver,
+            "enabled_notification_listeners"
+        ) ?: return false
+        return flat.split(':').any {
+            ComponentName.unflattenFromString(it)?.equals(cn) == true ||
+                it.contains(cn.flattenToString()) ||
+                it.contains("com.guguyu.gugu_bill/.BillNotificationListenerService")
+        }
     }
 
     /**
@@ -166,7 +314,6 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        MethodChannelWrapper.dispose()
     }
 
     override fun onRequestPermissionsResult(

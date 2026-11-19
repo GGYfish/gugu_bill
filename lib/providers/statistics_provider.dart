@@ -1,5 +1,7 @@
+import 'package:decimal/decimal.dart';
 import 'package:flutter/foundation.dart';
 import '../database/database.dart';
+import '../utils/money.dart';
 
 /// 统计Provider - 使用本地数据库数据
 class StatisticsProvider extends ChangeNotifier {
@@ -23,16 +25,25 @@ class StatisticsProvider extends ChangeNotifier {
   DateTime get rangeStart => _rangeStart;
   DateTime get rangeEnd => _rangeEnd;
 
-  double get income => (_data['income'] ?? 0).toDouble();
-  double get expense => (_data['expense'] ?? 0).toDouble();
+  Decimal get income => asDecimal(_data['income']);
+  Decimal get expense => asDecimal(_data['expense']);
   List get categoryStats => _data['categoryStats'] ?? [];
   List get dailyTrend => _data['dailyTrend'] ?? [];
   // 按类型拆分的分类/趋势（收入 / 支出 分开统计）
-  List get expenseCategoryStats => _data['expenseCategoryStats'] ?? [];
+  // 大类维度（按父分类聚合）
+  List get expenseParentCategoryStats => _data['expenseParentCategoryStats'] ?? [];
+  List get incomeParentCategoryStats => _data['incomeParentCategoryStats'] ?? [];
+  // 小类维度（按账单实际存放的明细分类聚合）
+  List get expenseSubCategoryStats => _data['expenseSubCategoryStats'] ?? [];
+  List get incomeSubCategoryStats => _data['incomeSubCategoryStats'] ?? [];
+  // 兼容旧字段：默认返回大类口径
+  List get expenseCategoryStats => expenseParentCategoryStats;
+  List get incomeCategoryStats => incomeParentCategoryStats;
   List get expenseDailyTrend => _data['expenseDailyTrend'] ?? [];
-  List get incomeCategoryStats => _data['incomeCategoryStats'] ?? [];
   List get incomeDailyTrend => _data['incomeDailyTrend'] ?? [];
   String get aiAnalysis => _data['aiAnalysis'] ?? '';
+  /// 收支总览：全部累计 / 本月 / 上月 / 本年（不受维度页 period 影响）
+  Map<String, dynamic> get overview => _data['overview'] ?? {};
 
   StatisticsProvider(this._db) {
     _resetRangeToDefault();
@@ -96,77 +107,101 @@ class StatisticsProvider extends ChangeNotifier {
       ).toList();
 
       // 计算收入和支出
-      double totalIncome = 0;
-      double totalExpense = 0;
-      Map<String, Map<String, dynamic>> expenseCategoryMap = {};
-      Map<String, Map<String, dynamic>> incomeCategoryMap = {};
-      Map<String, double> expenseDailyMap = {};
-      Map<String, double> incomeDailyMap = {};
+      Decimal totalIncome = Decimal.zero;
+      Decimal totalExpense = Decimal.zero;
+      final expenseParentMap = <String, Map<String, dynamic>>{};
+      final incomeParentMap = <String, Map<String, dynamic>>{};
+      final expenseSubMap = <String, Map<String, dynamic>>{};
+      final incomeSubMap = <String, Map<String, dynamic>>{};
+      Map<String, Decimal> expenseDailyMap = {};
+      Map<String, Decimal> incomeDailyMap = {};
 
-      String _dateKey(DateTime t) =>
+      String dateKey(DateTime t) =>
           '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
 
-      for (final bill in filteredBills) {
-        final catId = bill.categoryId ?? 'other';
-        final catName = bill.categoryName ?? '其他';
-        final dateKey = _dateKey(bill.billTime);
+      // 分类映射：小分类 -> 大分类（账单里存的是明细分类 id，大类需要按 parentId 上卷）
+      final allCategories = await _db.getAllCategories();
+      final catById = <String, LocalCategoriesData>{
+        for (final c in allCategories) c.categoryId: c,
+      };
 
-        if (bill.type == 'income') {
-          totalIncome += bill.amount;
-
-          // 收入按分类统计
-          if (incomeCategoryMap.containsKey(catId)) {
-            incomeCategoryMap[catId]!['amount'] =
-                (incomeCategoryMap[catId]!['amount'] as double) + bill.amount;
-            incomeCategoryMap[catId]!['count'] =
-                (incomeCategoryMap[catId]!['count'] as int) + 1;
-          } else {
-            incomeCategoryMap[catId] = {
-              'categoryId': catId,
-              'categoryName': catName,
-              'amount': bill.amount,
-              'count': 1,
-            };
-          }
-
-          // 收入每日趋势
-          incomeDailyMap[dateKey] = (incomeDailyMap[dateKey] ?? 0) + bill.amount;
-        } else if (bill.type == 'expense') {
-          totalExpense += bill.amount;
-
-          // 支出按分类统计
-          if (expenseCategoryMap.containsKey(catId)) {
-            expenseCategoryMap[catId]!['amount'] =
-                (expenseCategoryMap[catId]!['amount'] as double) + bill.amount;
-            expenseCategoryMap[catId]!['count'] =
-                (expenseCategoryMap[catId]!['count'] as int) + 1;
-          } else {
-            expenseCategoryMap[catId] = {
-              'categoryId': catId,
-              'categoryName': catName,
-              'amount': bill.amount,
-              'count': 1,
-            };
-          }
-
-          // 支出每日趋势
-          expenseDailyMap[dateKey] = (expenseDailyMap[dateKey] ?? 0) + bill.amount;
+      void addTo(Map<String, Map<String, dynamic>> target, String key,
+          String name, Decimal amt) {
+        final hit = target[key];
+        if (hit != null) {
+          hit['amount'] = (hit['amount'] as Decimal) + amt;
+          hit['count'] = (hit['count'] as int) + 1;
+        } else {
+          target[key] = {
+            'categoryId': key,
+            'categoryName': name,
+            'amount': amt,
+            'count': 1,
+          };
         }
       }
 
-      // 转换为分类统计列表并排序
-      final expenseCategoryStats = expenseCategoryMap.values.toList()
-        ..sort((a, b) => (b['amount'] as double).compareTo(a['amount'] as double));
-      final incomeCategoryStats = incomeCategoryMap.values.toList()
-        ..sort((a, b) => (b['amount'] as double).compareTo(a['amount'] as double));
+      for (final bill in filteredBills) {
+        final subId = bill.categoryId ?? 'other';
+        final subName = bill.categoryName ?? '其他';
+        // 上卷到大类：有父分类则用父分类 id/name，否则自身即大类
+        // 查不到映射（老数据/已删除分类）时，大类回退为明细本身
+        final cat = catById[subId];
+        final String parentId;
+        final String parentName;
+        if (cat?.parentId != null) {
+          final parent = catById[cat!.parentId];
+          parentId = parent?.categoryId ?? cat.parentId!;
+          parentName = parent?.name ?? subName;
+        } else {
+          parentId = cat?.categoryId ?? subId;
+          parentName = cat?.name ?? subName;
+        }
+        final dateStr = dateKey(bill.billTime);
 
-      // 计算百分比
-      for (var cat in expenseCategoryStats) {
-        cat['percentage'] = totalExpense > 0 ? (cat['amount'] as double) / totalExpense : 0.0;
+        if (bill.type == 'income') {
+          final amt = decimalOf(bill.amount);
+          totalIncome += amt;
+          addTo(incomeSubMap, subId, subName, amt);
+          addTo(incomeParentMap, parentId, parentName, amt);
+
+          // 收入每日趋势
+          incomeDailyMap[dateStr] = (incomeDailyMap[dateStr] ?? Decimal.zero) + amt;
+        } else if (bill.type == 'expense') {
+          final amt = decimalOf(bill.amount);
+          totalExpense += amt;
+          addTo(expenseSubMap, subId, subName, amt);
+          addTo(expenseParentMap, parentId, parentName, amt);
+
+          // 支出每日趋势
+          expenseDailyMap[dateStr] = (expenseDailyMap[dateStr] ?? Decimal.zero) + amt;
+        }
       }
-      for (var cat in incomeCategoryStats) {
-        cat['percentage'] = totalIncome > 0 ? (cat['amount'] as double) / totalIncome : 0.0;
+
+      List<Map<String, dynamic>> sortStats(Map<String, Map<String, dynamic>> m) {
+        final list = m.values.toList()
+          ..sort((a, b) => (b['amount'] as Decimal).compareTo(a['amount'] as Decimal));
+        return list;
       }
+
+      void fillPercentage(List<Map<String, dynamic>> list, Decimal total) {
+        for (var cat in list) {
+          cat['percentage'] = total > Decimal.zero
+              ? round2(((cat['amount'] as Decimal) / total)
+                      .toDecimal(scaleOnInfinitePrecision: 4))
+              : Decimal.zero;
+        }
+      }
+
+      // 大类 + 小类各一份排序与占比
+      final expenseParentStats = sortStats(expenseParentMap);
+      final expenseSubStats = sortStats(expenseSubMap);
+      final incomeParentStats = sortStats(incomeParentMap);
+      final incomeSubStats = sortStats(incomeSubMap);
+      fillPercentage(expenseParentStats, totalExpense);
+      fillPercentage(expenseSubStats, totalExpense);
+      fillPercentage(incomeParentStats, totalIncome);
+      fillPercentage(incomeSubStats, totalIncome);
 
       // 转换为趋势列表
       final expenseDailyTrend = expenseDailyMap.entries.map((e) => {
@@ -184,7 +219,7 @@ class StatisticsProvider extends ChangeNotifier {
       String aiAnalysis = _generateAIAnalysis(
         totalIncome: totalIncome,
         totalExpense: totalExpense,
-        categoryStats: expenseCategoryStats,
+        categoryStats: expenseParentStats,
         period: _period,
         billCount: filteredBills.length,
       );
@@ -192,13 +227,21 @@ class StatisticsProvider extends ChangeNotifier {
       _data = {
         'income': totalIncome,
         'expense': totalExpense,
-        // 兼容旧字段（默认支出，保留以防其他模块使用）
-        'categoryStats': expenseCategoryStats,
+        // 总览：全部累计 / 本月 / 上月 / 本年（维度页 period 不影响总览）
+        'overview': _buildOverview(bills, catById),
+        // 兼容旧字段（默认大类支出口径，保留以防其他模块使用）
+        'categoryStats': expenseParentStats,
         'dailyTrend': expenseDailyTrend,
-        // 按类型拆分的字段
-        'expenseCategoryStats': expenseCategoryStats,
+        // 大类维度
+        'expenseParentCategoryStats': expenseParentStats,
+        'incomeParentCategoryStats': incomeParentStats,
+        // 小类维度
+        'expenseSubCategoryStats': expenseSubStats,
+        'incomeSubCategoryStats': incomeSubStats,
+        // 兼容旧字段
+        'expenseCategoryStats': expenseParentStats,
+        'incomeCategoryStats': incomeParentStats,
         'expenseDailyTrend': expenseDailyTrend,
-        'incomeCategoryStats': incomeCategoryStats,
         'incomeDailyTrend': incomeDailyTrend,
         'aiAnalysis': aiAnalysis,
       };
@@ -223,10 +266,130 @@ class StatisticsProvider extends ChangeNotifier {
     loadStatistics();
   }
 
+  /// 总览聚合：全部累计 / 本月 / 上月 / 本年
+  /// 只统计已确认账单；转账不计入收支（只累加 income / expense 类型）。
+  Map<String, dynamic> _buildOverview(
+    List<LocalBillsData> bills,
+    Map<String, LocalCategoriesData> catById,
+  ) {
+    final now = DateTime.now();
+    final monthStart = DateTime(now.year, now.month, 1);
+    final nextMonthStart = DateTime(now.year, now.month + 1, 1);
+    final lastMonthStart = DateTime(now.year, now.month - 1, 1);
+    final lastMonthEnd = monthStart;
+    final yearStart = DateTime(now.year, 1, 1);
+    final nextYearStart = DateTime(now.year + 1, 1, 1);
+    final lastMonthDays = DateTime(now.year, now.month, 0).day;
+    final yearDays = now.difference(yearStart).inDays + 1;
+
+    bool inRange(DateTime t, DateTime s, DateTime e) =>
+        !t.isBefore(s) && t.isBefore(e);
+
+    String parentNameOf(String? subId, String? subName) {
+      final cat = subId == null ? null : catById[subId];
+      if (cat?.parentId != null) {
+        return catById[cat!.parentId]?.name ?? subName ?? '其他';
+      }
+      return cat?.name ?? subName ?? '其他';
+    }
+
+    String parentIdOf(String? subId) {
+      final cat = subId == null ? null : catById[subId];
+      if (cat?.parentId != null) {
+        return catById[cat!.parentId]?.categoryId ?? cat.parentId!;
+      }
+      return cat?.categoryId ?? subId ?? 'other';
+    }
+
+    Map<String, dynamic> bucket(List<LocalBillsData> list, {int? days}) {
+      Decimal income = Decimal.zero;
+      Decimal expense = Decimal.zero;
+      int count = 0;
+      final parentMap = <String, Map<String, dynamic>>{};
+      for (final b in list) {
+        if (b.confirmStatus != 1) continue;
+        final amt = decimalOf(b.amount);
+        if (b.type == 'income') {
+          income += amt;
+          count++;
+        } else if (b.type == 'expense') {
+          expense += amt;
+          count++;
+          final pid = parentIdOf(b.categoryId);
+          final pname = parentNameOf(b.categoryId, b.categoryName);
+          final hit = parentMap[pid];
+          if (hit != null) {
+            hit['amount'] = (hit['amount'] as Decimal) + amt;
+          } else {
+            parentMap[pid] = {
+              'categoryId': pid,
+              'categoryName': pname,
+              'amount': amt,
+            };
+          }
+        }
+      }
+      final tops = parentMap.values.toList()
+        ..sort((a, b) =>
+            (b['amount'] as Decimal).compareTo(a['amount'] as Decimal));
+      final top3 = tops.take(3).toList();
+      for (final t in top3) {
+        t['percentage'] = expense > Decimal.zero
+            ? round2(((t['amount'] as Decimal) / expense)
+                    .toDecimal(scaleOnInfinitePrecision: 4))
+            : Decimal.zero;
+      }
+      return {
+        'income': income,
+        'expense': expense,
+        'balance': income - expense,
+        'count': count,
+        'topExpense': top3,
+        if (days != null && days > 0)
+          'dailyAvg': expense > Decimal.zero
+              ? round2((expense / Decimal.fromInt(days))
+                  .toDecimal(scaleOnInfinitePrecision: 4))
+              : Decimal.zero,
+      };
+    }
+
+    final confirmed =
+        bills.where((b) => b.confirmStatus == 1).toList();
+    final monthBills = confirmed
+        .where((b) => inRange(b.billTime, monthStart, nextMonthStart))
+        .toList();
+    final lastMonthBills = confirmed
+        .where((b) => inRange(b.billTime, lastMonthStart, lastMonthEnd))
+        .toList();
+    final yearBills = confirmed
+        .where((b) => inRange(b.billTime, yearStart, nextYearStart))
+        .toList();
+
+    String monthLabel(DateTime d) => '${d.month}月';
+    return {
+      'all': bucket(confirmed),
+      'month': {
+        ...bucket(monthBills, days: now.day),
+        'label': '${now.year}年${now.month}月',
+      },
+      'lastMonth': {
+        ...bucket(lastMonthBills, days: lastMonthDays),
+        'label':
+            '${lastMonthStart.year}年${lastMonthStart.month}月',
+      },
+      'year': {
+        ...bucket(yearBills, days: yearDays),
+        'label': '${now.year}年',
+      },
+      'monthShort': monthLabel(now),
+      'lastMonthShort': monthLabel(lastMonthStart),
+    };
+  }
+
   /// 生成AI分析文案
   String _generateAIAnalysis({
-    required double totalIncome,
-    required double totalExpense,
+    required Decimal totalIncome,
+    required Decimal totalExpense,
     required List categoryStats,
     required String period,
     required int billCount,
@@ -238,14 +401,14 @@ class StatisticsProvider extends ChangeNotifier {
 
     // 收支概览
     sb.write('本期（$periodName）共记录 $billCount 笔账单。');
-    if (totalIncome > 0) {
-      sb.write(' 收入 ${totalIncome.toStringAsFixed(2)} 元');
+    if (totalIncome > Decimal.zero) {
+      sb.write(' 收入 ${formatMoney(totalIncome)} 元');
     }
-    if (totalExpense > 0) {
-      sb.write('，支出 ${totalExpense.toStringAsFixed(2)} 元');
+    if (totalExpense > Decimal.zero) {
+      sb.write('，支出 ${formatMoney(totalExpense)} 元');
     }
-    if (balance != 0) {
-      sb.write('，${balance >= 0 ? '结余' : '超支'} ${balance.abs().toStringAsFixed(2)} 元。');
+    if (balance != Decimal.zero) {
+      sb.write('，${balance >= Decimal.zero ? '结余' : '超支'} ${formatMoney(balance.abs())} 元。');
     } else {
       sb.write('。');
     }
@@ -253,21 +416,23 @@ class StatisticsProvider extends ChangeNotifier {
     // 支出分析
     if (categoryStats.isNotEmpty) {
       final topCategory = categoryStats.first;
-      final topPercent = (topCategory['percentage'] as double) * 100;
+      final topPercent = asDecimal(topCategory['percentage']) * Decimal.fromInt(100);
 
       sb.write(' 支出主要集中在${topCategory['categoryName']}，占比 ${topPercent.toStringAsFixed(1)}%。');
 
       if (categoryStats.length >= 2) {
         final secondCategory = categoryStats[1];
-        final secondPercent = (secondCategory['percentage'] as double) * 100;
+        final secondPercent = asDecimal(secondCategory['percentage']) * Decimal.fromInt(100);
         sb.write(' 其次是${secondCategory['categoryName']}（${secondPercent.toStringAsFixed(1)}%）。');
       }
     }
 
     // 建议
-    if (balance < 0) {
+    if (balance < Decimal.zero) {
       sb.write(' 建议适当控制开支，避免超支。');
-    } else if (balance > 0 && balance / totalIncome > 0.3) {
+    } else if (balance > Decimal.zero &&
+        totalIncome > Decimal.zero &&
+        (balance / totalIncome).toDecimal(scaleOnInfinitePrecision: 4) > decimalOf(0.3)) {
       sb.write(' 继续保持良好的储蓄习惯！');
     }
 

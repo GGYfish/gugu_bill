@@ -1,3 +1,4 @@
+import 'package:decimal/decimal.dart';
 import 'package:flutter/foundation.dart';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
@@ -5,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'dart:convert';
 import '../database/database.dart';
 import '../services/network_service.dart';
+import '../utils/money.dart';
 
 class LiabilityProvider extends ChangeNotifier {
   final AppDatabase _db;
@@ -22,15 +24,18 @@ class LiabilityProvider extends ChangeNotifier {
   String? get error => _error;
 
   /// 总负债金额
-  double get totalLiability => _liabilities.fold(0, (sum, l) => sum + l.totalAmount);
+  Decimal get totalLiability => _liabilities.fold(
+      Decimal.zero, (Decimal sum, l) => sum + decimalOf(l.totalAmount));
 
   /// 待还金额（未结清的负债）
-  double get pendingRepay => _liabilities
+  Decimal get pendingRepay => _liabilities
       .where((l) => l.status == 0)
-      .fold(0, (sum, l) => sum + (l.totalAmount - l.repaidAmount));
+      .fold(Decimal.zero,
+          (Decimal sum, l) => sum + (decimalOf(l.totalAmount) - decimalOf(l.repaidAmount)));
 
   /// 已还金额
-  double get repaidAmount => _liabilities.fold(0, (sum, l) => sum + l.repaidAmount);
+  Decimal get repaidAmount => _liabilities.fold(
+      Decimal.zero, (Decimal sum, l) => sum + decimalOf(l.repaidAmount));
 
   /// 超期金额
   /// 说明：
@@ -39,7 +44,7 @@ class LiabilityProvider extends ChangeNotifier {
   /// - credit_card / other 的真实还款日是 repayDate，逾期由 liabilityIsOverdue 判定；
   ///   personal 无还款日，本身不判逾期
   /// - installment / mortgage / car_loan 的 dueDate 由用户录入，可信
-  double get overdueAmount {
+  Decimal get overdueAmount {
     final now = DateTime.now();
     return _liabilities
         .where((l) =>
@@ -48,18 +53,19 @@ class LiabilityProvider extends ChangeNotifier {
             l.type != 'other' &&
             l.type != 'personal' &&
             l.dueDate.isBefore(now))
-        .fold(0, (sum, l) => sum + (l.totalAmount - l.repaidAmount));
+        .fold(Decimal.zero,
+            (Decimal sum, l) => sum + (decimalOf(l.totalAmount) - decimalOf(l.repaidAmount)));
   }
 
   /// 本月待还金额
   /// 私人借款不计入（无还款日，无月度账单概念）
-  double get thisMonthRepay {
+  Decimal get thisMonthRepay {
     return _calcMonthRepay(DateTime.now(), isNextMonth: false);
   }
 
   /// 下月待还金额
   /// 私人借款不计入（无还款日，无月度账单概念）
-  double get nextMonthRepay {
+  Decimal get nextMonthRepay {
     return _calcMonthRepay(DateTime.now(), isNextMonth: true);
   }
 
@@ -67,7 +73,7 @@ class LiabilityProvider extends ChangeNotifier {
   ///
   /// 显式排除以下负债类型（这些类型没有月度账单概念，不计入本月/下月待还）：
   /// - personal（私人借款）：无还款日，纯待还剩余本金
-  double _calcMonthRepay(DateTime now, {required bool isNextMonth}) {
+  Decimal _calcMonthRepay(DateTime now, {required bool isNextMonth}) {
     int targetYear = now.year;
     int targetMonth = isNextMonth ? now.month + 1 : now.month;
     if (targetMonth > 12) {
@@ -79,7 +85,8 @@ class LiabilityProvider extends ChangeNotifier {
         .where((l) =>
             l.status == 0 &&
             l.type != 'personal') // 私人借款不计入本月/下月待还
-        .fold(0, (sum, l) => sum + _liabilityMonthAmount(l, now, targetYear, targetMonth, isThisMonth: !isNextMonth));
+        .fold(Decimal.zero,
+            (Decimal sum, l) => sum + _liabilityMonthAmount(l, now, targetYear, targetMonth, isThisMonth: !isNextMonth));
   }
 
   /// 是否"无到期日的持续性负债"：信用卡 / 月付信贷 / 私人借款
@@ -99,10 +106,10 @@ class LiabilityProvider extends ChangeNotifier {
   ///   早于首期的月份不计入；首期及之后每月自动计入剩余本金
   /// - [isThisMonth]=true：本月待还。规则：首期账单已到 AND 本月没还过
   /// - [isThisMonth]=false：下月待还。规则：未结清即有下期账单
-  double _liabilityMonthAmount(LocalLiabilitiesData l, DateTime now, int targetYear, int targetMonth, {required bool isThisMonth}) {
+  Decimal _liabilityMonthAmount(LocalLiabilitiesData l, DateTime now, int targetYear, int targetMonth, {required bool isThisMonth}) {
     // 兜底：私人借款理论上已被 _calcMonthRepay 入口过滤，
     // 这里再 return 0 保证任何直接调用者也不会误算
-    if (l.type == 'personal') return 0;
+    if (l.type == 'personal') return Decimal.zero;
 
     // 信用卡 / 月付信贷：按月循环账单
     // repayDate 锚定"下一个还没到的还款日"，含义有两层：
@@ -110,19 +117,19 @@ class LiabilityProvider extends ChangeNotifier {
     // 循环特性：首期之后每月自动出账单，剩余本金即为当期账单金额；
     // 还款后 repaidAmount 增加，下期账单自动变成新的剩余本金
     if (l.type == 'credit_card' || l.type == 'other') {
-      final pending = l.totalAmount - l.repaidAmount;
+      final pending = decimalOf(l.totalAmount) - decimalOf(l.repaidAmount);
       final repayDate = l.repayDate;
       // 老数据缺失 repayDate，无法确定首期，只按循环计入下月
-      if (repayDate == null) return isThisMonth ? 0 : pending;
+      if (repayDate == null) return isThisMonth ? Decimal.zero : pending;
 
       // 目标月早于首期账单月 → 账单还没开始，不计入
       // （例：9/29 录入、账单日 7 号 → repayDate = 10/7，9 月不计入，到 10 月才激活）
       final bool isBeforeFirstBill = targetYear < repayDate.year ||
           (targetYear == repayDate.year && targetMonth < repayDate.month);
-      if (isBeforeFirstBill) return 0;
+      if (isBeforeFirstBill) return Decimal.zero;
 
       // 本月已登记过还款 → 该期账单结清，归 0
-      if (isThisMonth && _hasRepayInMonth(l.liabilityId, targetYear, targetMonth)) return 0;
+      if (isThisMonth && _hasRepayInMonth(l.liabilityId, targetYear, targetMonth)) return Decimal.zero;
       return pending;
     }
 
@@ -143,35 +150,36 @@ class LiabilityProvider extends ChangeNotifier {
       if (isInvertedPeriod) {
         // 异常数据：本月已还 → 0；否则返回剩余总额
         if (isThisMonth) {
-          if (_hasRepayInMonth(l.liabilityId, targetYear, targetMonth)) return 0;
-          return l.totalAmount - l.repaidAmount;
+          if (_hasRepayInMonth(l.liabilityId, targetYear, targetMonth)) return Decimal.zero;
+          return decimalOf(l.totalAmount) - decimalOf(l.repaidAmount);
         }
-        return 0;
+        return Decimal.zero;
       }
 
       // 目标月扣款日
       final repayDay = _extractRepayDay(l);
-      if (repayDay <= 0) return 0;
+      if (repayDay <= 0) return Decimal.zero;
       final daysInTargetMonth = DateTime(targetYear, targetMonth + 1, 0).day;
       final actualDay = repayDay > daysInTargetMonth ? daysInTargetMonth : repayDay;
       final dueDateInTargetMonth = DateTime(targetYear, targetMonth, actualDay);
 
       // 扣款日不在贷款期内 → 不计入
-      if (dueDateInTargetMonth.isBefore(startDate)) return 0;
-      if (dueDateInTargetMonth.isAfter(endDate)) return 0;
+      if (dueDateInTargetMonth.isBefore(startDate)) return Decimal.zero;
+      if (dueDateInTargetMonth.isAfter(endDate)) return Decimal.zero;
 
       // 本月特有：扣款日已过不归 0（过期也要继续显示本月待还，未还由下面的 isOverdue 判断单独展示）
       // 只在本月已还 → 0
       if (isThisMonth) {
-        if (_hasRepayInMonth(l.liabilityId, targetYear, targetMonth)) return 0;
+        if (_hasRepayInMonth(l.liabilityId, targetYear, targetMonth)) return Decimal.zero;
       }
 
       final months = _monthsBetween(startDate, endDate);
-      if (months <= 0) return 0;
-      return l.totalAmount / months;
+      if (months <= 0) return Decimal.zero;
+      // 月供 = 总金额 / 期数，保留 2 位小数
+      return divMoney(decimalOf(l.totalAmount), months);
     }
 
-    return 0;
+    return Decimal.zero;
   }
 
   /// 提取月付类负债的"每月几号"
@@ -185,7 +193,8 @@ class LiabilityProvider extends ChangeNotifier {
       return l.dueDate.day;
     }
     // 信用卡/月付信贷：repayDate.day（dueDate 已废弃）
-    return l.repayDate!.day;
+    // 老数据可能缺失 repayDate，返回 0 表示无还款日，调用方按无还款日处理
+    return l.repayDate?.day ?? 0;
   }
 
   /// 该负债在指定 (year, month) 是否已登记过还款
@@ -206,8 +215,8 @@ class LiabilityProvider extends ChangeNotifier {
   }
 
   /// 公开：单笔负债本月待还金额（列表项展示用）
-  double liabilityThisMonthRepay(LocalLiabilitiesData l) {
-    if (l.status != 0) return 0;
+  Decimal liabilityThisMonthRepay(LocalLiabilitiesData l) {
+    if (l.status != 0) return Decimal.zero;
     final now = DateTime.now();
     return _liabilityMonthAmount(l, now, now.year, now.month, isThisMonth: true);
   }
@@ -215,18 +224,18 @@ class LiabilityProvider extends ChangeNotifier {
   /// 公开：单笔负债的"每月还款金额"（不受日期过滤影响，纯展示用）
   /// - 月付类（installment / mortgage / car_loan）：totalAmount / 期数
   /// - 其他类型：返回 0（一次性负债的"待还金额"语义是剩余本金，不在这里展示）
-  double liabilityMonthlyAmount(LocalLiabilitiesData l) {
+  Decimal liabilityMonthlyAmount(LocalLiabilitiesData l) {
     if (l.type != 'installment' &&
         l.type != 'mortgage' &&
         l.type != 'car_loan') {
-      return 0;
+      return Decimal.zero;
     }
     final DateTime? start = l.firstPaymentDate;
     final end = l.lastPaymentDate ?? l.dueDate;
-    if (start == null) return 0;
+    if (start == null) return Decimal.zero;
     final months = _monthsBetween(start, end);
-    if (months <= 0) return 0;
-    return l.totalAmount / months;
+    if (months <= 0) return Decimal.zero;
+    return divMoney(decimalOf(l.totalAmount), months);
   }
 
   /// 公开：单笔负债的"每月几号还款"，非月付类返回 null
@@ -314,8 +323,8 @@ class LiabilityProvider extends ChangeNotifier {
   /// - 消费分期 / 房贷 / 车贷：单期月供
   /// - 信用卡 / 月付信贷：剩余本金（持续性负债，没有"期数"概念）
   /// - 私人借款：恒为 0（无还款日，不判逾期）
-  double liabilityOverdueAmount(LocalLiabilitiesData l) {
-    if (!liabilityIsOverdue(l)) return 0;
+  Decimal liabilityOverdueAmount(LocalLiabilitiesData l) {
+    if (!liabilityIsOverdue(l)) return Decimal.zero;
     final isMonthlyTerm = l.type == 'mortgage' ||
         l.type == 'car_loan' ||
         l.type == 'installment';
@@ -324,9 +333,9 @@ class LiabilityProvider extends ChangeNotifier {
         l.firstPaymentDate != null &&
         l.lastPaymentDate != null) {
       final months = _monthsBetween(l.firstPaymentDate!, l.lastPaymentDate!);
-      if (months > 0) return l.totalAmount / months;
+      if (months > 0) return divMoney(decimalOf(l.totalAmount), months);
     }
-    return l.totalAmount - l.repaidAmount;
+    return decimalOf(l.totalAmount) - decimalOf(l.repaidAmount);
   }
 
   int _monthsBetween(DateTime start, DateTime end) {
@@ -382,11 +391,11 @@ class LiabilityProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> addLiability({
+  Future<bool> addLiability({
     required String name,
     required String type,
     required String accountId,
-    required double totalAmount,
+    required Decimal totalAmount,
     DateTime? dueDate,
     String? remark,
     String? institution,
@@ -408,7 +417,7 @@ class LiabilityProvider extends ChangeNotifier {
         name: Value(name),
         type: Value(type),
         accountId: Value(accountId),
-        totalAmount: Value(totalAmount),
+        totalAmount: Value(totalAmount.toDouble()),
         dueDate: Value(dueDate ?? DateTime.now().add(const Duration(days: 30))),
         remark: Value(remark),
         institution: Value(institution),
@@ -431,8 +440,10 @@ class LiabilityProvider extends ChangeNotifier {
         ));
       }
       // 数据库监听器会自动更新数据并触发 notifyListeners()
+      return true;
     } catch (e) {
       _error = e.toString();
+      return false;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -441,11 +452,33 @@ class LiabilityProvider extends ChangeNotifier {
 
   Future<void> addRepay({
     required String liabilityId,
-    required double amount,
+    required Decimal amount,
     required String accountId,
     DateTime? repayTime,
     String? remark,
   }) async {
+    // 超额还款直接拦截（兜底：即使调用方漏校验，这里也禁止提交）
+    LocalLiabilitiesData? target;
+    try {
+      target = _liabilities.firstWhere((l) => l.liabilityId == liabilityId);
+    } catch (_) {
+      target = null;
+    }
+    target ??= await _db.getLiabilityById(liabilityId);
+    if (target != null) {
+      final remaining =
+          decimalOf(target.totalAmount) - decimalOf(target.repaidAmount);
+      if (amount > remaining) {
+        final excess = amount - remaining;
+        _error =
+            '还款金额超了 ¥${formatMoney(excess)}，最多可还 ¥${formatMoney(remaining)}';
+        // 校验失败不 notify：此时还款弹窗还开着，notify 会触发列表重建，
+        // 把弹窗入口的 item context 置为 deactivated，后续 Toast 再查祖先就会炸。
+        // 直接抛给调用方提示即可。
+        throw ArgumentError(_error);
+      }
+    }
+
     _isLoading = true;
     notifyListeners();
 
@@ -459,7 +492,7 @@ class LiabilityProvider extends ChangeNotifier {
       await _db.insertRepay(LocalLiabilityRepaysCompanion(
         repayId: Value(repayId),
         liabilityId: Value(liabilityId),
-        amount: Value(amount),
+        amount: Value(amount.toDouble()),
         accountId: Value(accountId),
         repayTime: Value(actualRepayTime),
         remark: Value(remark),
@@ -473,7 +506,7 @@ class LiabilityProvider extends ChangeNotifier {
         billId: Value(billId),
         sourceHash: Value(sourceHash),
         type: const Value('expense'),
-        amount: Value(amount),
+        amount: Value(amount.toDouble()),
         accountId: Value(accountId),
         categoryId: const Value('repay_liability'),
         categoryName: const Value('负债还款'),
@@ -485,22 +518,28 @@ class LiabilityProvider extends ChangeNotifier {
         confirmStatus: const Value(1),
       ));
 
-      // 更新负债已还金额
-      final liability = _liabilities.firstWhere(
-        (l) => l.liabilityId == liabilityId,
-        orElse: () => _liabilities.first, // 不应该发生，但提供安全回退
-      );
-      final newRepaidAmount = liability.repaidAmount + amount;
-      final newStatus = newRepaidAmount >= liability.totalAmount ? 1 : 0;
+      // 更新负债已还金额：优先用开头查到的 target（add 前快照），
+      // 内存列表可能尚未加载/不同步，禁止用 _liabilities.first 兜底（空列表会抛 StateError）。
+      final base = target ??
+          _liabilities.cast<LocalLiabilitiesData?>().firstWhere(
+                (l) => l?.liabilityId == liabilityId,
+                orElse: () => null,
+              );
+      if (base == null) {
+        throw StateError('找不到该笔负债记录，请返回刷新后重试');
+      }
+      final newRepaidAmount = decimalOf(base.repaidAmount) + amount;
+      final newStatus = newRepaidAmount >= decimalOf(base.totalAmount) ? 1 : 0;
 
       await _db.updateLiability(liabilityId, LocalLiabilitiesCompanion(
-        repaidAmount: Value(newRepaidAmount),
+        repaidAmount: Value(newRepaidAmount.toDouble()),
         status: Value(newStatus),
         updatedAt: Value(DateTime.now()),
       ));
       // 数据库监听器会自动更新数据并触发 notifyListeners()
     } catch (e) {
       _error = e.toString();
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();

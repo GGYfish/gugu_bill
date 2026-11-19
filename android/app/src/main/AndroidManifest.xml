@@ -8,6 +8,11 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- 前台保活服务 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
     <!-- 备份导出到公共 Downloads（Android 10+ 用 MediaStore 不需要权限；旧版本需要此权限） -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
@@ -49,12 +54,14 @@
             </intent-filter>
         </activity>
         
-        <!-- 无障碍服务 -->
+        <!-- 无障碍服务（支付页识别） -->
+        <!-- stopWithTask=false：从最近任务划掉时尽量不跟着停；被「强制停止」时系统仍会关掉无障碍 -->
         <service
             android:name=".BillAccessibilityService"
             android:exported="true"
+            android:stopWithTask="false"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:foregroundServiceType="dataSync">
+            android:label="咕咕鱼自动记账">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
@@ -62,14 +69,38 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <!-- 通知栏监听服务 -->
+        <service
+            android:name=".BillNotificationListenerService"
+            android:label="咕咕鱼记账通知监听"
+            android:exported="true"
+            android:stopWithTask="false"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- 自动记账前台保活 -->
+        <service
+            android:name=".AutoRecordKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse|dataSync">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="自动记账后台保活，用于持续接收支付通知并记账" />
+        </service>
         
         <!-- 开机广播接收器 -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
-            android:exported="true">
+            android:exported="true"
+            android:directBootAware="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>

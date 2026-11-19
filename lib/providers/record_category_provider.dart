@@ -133,9 +133,16 @@ class RecordCategoryProvider extends ChangeNotifier {
   // 持久化的分类排序顺序：{type: [categoryId1, categoryId2, ...]}
   Map<String, List<String>> _categoryOrder = {};
   // 持久化的分类使用次数：{type: {categoryId: count}}
+  // 小分类的使用次数放在 "sub:<父分类id>" 命名空间下，与大分类同结构，
+  // 共用 local_user_config.category_usage 一个 JSON 字段，无需改表。
   Map<String, Map<String, int>> _categoryUsage = {};
   // 是否已从数据库加载过排序数据
   bool _orderLoaded = false;
+  // 原始分类数据缓存：使用次数变化时据此重新构建排序结果
+  List<LocalCategoriesData> _allCategories = [];
+
+  /// 小分类使用次数的存储 key
+  static String _subUsageKey(String parentId) => 'sub:$parentId';
 
   List<CategoryItem> get expenseCategories => _expenseCategories;
   List<CategoryItem> get incomeCategories => _incomeCategories;
@@ -190,9 +197,15 @@ class RecordCategoryProvider extends ChangeNotifier {
   }
 
   void _processCategories(List<LocalCategoriesData> data) {
+    _allCategories = data;
+    _rebuildCategories();
+  }
+
+  /// 依据原始数据 + 当前排序/使用次数，重新构建三个 Tab 的分类列表
+  void _rebuildCategories() {
     // 分离大分类和小分类
-    final parents = data.where((c) => c.parentId == null).toList();
-    final subs = data.where((c) => c.parentId != null).toList();
+    final parents = _allCategories.where((c) => c.parentId == null).toList();
+    final subs = _allCategories.where((c) => c.parentId != null).toList();
 
     // 构建子分类Map
     final subsMap = <String, List<LocalCategoriesData>>{};
@@ -202,13 +215,24 @@ class RecordCategoryProvider extends ChangeNotifier {
       }
     }
 
-    // 分类
-    final expenseParents = parents.where((p) => p.type == 'expense').toList();
-    final incomeParents = parents.where((p) => p.type == 'income').toList();
+    // 其他类型固定 ID（历史默认数据里 type 仍是 expense，但属于"其他"Tab）
+    const otherParentIds = {
+      'transfer',
+      'repayment',
+      'recharge',
+      'withdraw',
+      'agent_pay',
+    };
 
-    // 其他类型（用于"其他"tab，转账、还款、充值等）
-    final otherParentIds = ['transfer', 'repayment', 'recharge', 'withdraw', 'agent_pay'];
-    final otherParents = parents.where((p) => otherParentIds.contains(p.categoryId)).toList();
+    // 三个 Tab 互斥：支出 / 收入 / 其他，各自独立按同一套规则排序
+    final expenseParents = parents
+        .where((p) => p.type == 'expense' && !otherParentIds.contains(p.categoryId))
+        .toList();
+    final incomeParents = parents.where((p) => p.type == 'income').toList();
+    // 其他：type==other 的自定义分类 + 固定归属其他的历史分类
+    final otherParents = parents
+        .where((p) => p.type == 'other' || otherParentIds.contains(p.categoryId))
+        .toList();
 
     _expenseCategories = _buildSortedCategories(expenseParents, subsMap, 'expense');
     _incomeCategories = _buildSortedCategories(incomeParents, subsMap, 'income');
@@ -220,13 +244,14 @@ class RecordCategoryProvider extends ChangeNotifier {
 
   /// 构建排好序的分类列表
   /// 排序规则：1. 用户自定义顺序 > 2. 使用次数降序 > 3. 数据库 sortOrder
+  /// 小分类同样按使用次数降序排列（次数相同保持原有顺序）。
   List<CategoryItem> _buildSortedCategories(
     List<LocalCategoriesData> parents,
     Map<String, List<LocalCategoriesData>> subsMap,
     String type,
   ) {
     final items = parents.map((p) {
-      final subList = subsMap[p.categoryId] ?? [];
+      final subList = _sortSubsByUsage(subsMap[p.categoryId] ?? [], p.categoryId);
       return CategoryItem.fromData(p, subs: subList);
     }).toList();
 
@@ -235,10 +260,11 @@ class RecordCategoryProvider extends ChangeNotifier {
     final customOrder = _categoryOrder[type] ?? <String>[];
     final usageMap = _categoryUsage[type] ?? {};
 
-    final sorted = List<CategoryItem>.from(items);
-    sorted.sort((a, b) {
-      final aIdx = customOrder.indexOf(a.id);
-      final bIdx = customOrder.indexOf(b.id);
+    // 带原始下标做装饰排序，保证使用次数相同的情况下顺序稳定
+    final decorated = List.generate(items.length, (i) => MapEntry(i, items[i]));
+    decorated.sort((a, b) {
+      final aIdx = customOrder.indexOf(a.value.id);
+      final bIdx = customOrder.indexOf(b.value.id);
       final aHasCustom = aIdx >= 0;
       final bHasCustom = bIdx >= 0;
 
@@ -254,50 +280,96 @@ class RecordCategoryProvider extends ChangeNotifier {
       }
 
       // 都没有自定义顺序，按使用次数降序排
-      final aUsage = usageMap[a.id] ?? 0;
-      final bUsage = usageMap[b.id] ?? 0;
+      final aUsage = usageMap[a.value.id] ?? 0;
+      final bUsage = usageMap[b.value.id] ?? 0;
       if (aUsage != bUsage) {
         return bUsage.compareTo(aUsage);
       }
 
       // 使用次数相同，按数据库 sortOrder 排
-      return 0;
+      final aOrder = _sortOrderOf(a.value.id);
+      final bOrder = _sortOrderOf(b.value.id);
+      if (aOrder != bOrder) return aOrder.compareTo(bOrder);
+
+      // sortOrder 也相同，保持原有顺序
+      return a.key.compareTo(b.key);
     });
 
-    return sorted;
+    return decorated.map((e) => e.value).toList();
   }
 
-  /// 记录分类使用次数（每次记账成功后调用）
-  void recordUsage(String categoryId) {
-    // 找出该分类属于哪种类型
-    String? type;
-    for (final cat in [..._expenseCategories, ..._incomeCategories, ..._otherCategories]) {
-      if (cat.id == categoryId) {
-        type = _getCategoryType(cat.id);
-        break;
-      }
+  /// 大分类的 sortOrder（从原始数据中查）
+  int _sortOrderOf(String categoryId) {
+    for (final c in _allCategories) {
+      if (c.categoryId == categoryId) return c.sortOrder;
     }
+    return 0;
+  }
+
+  /// 小分类按使用次数降序排序；次数相同保持原有顺序
+  List<LocalCategoriesData> _sortSubsByUsage(
+    List<LocalCategoriesData> subs,
+    String parentId,
+  ) {
+    if (subs.length < 2) return List.of(subs);
+
+    final usageMap = _categoryUsage[_subUsageKey(parentId)] ?? {};
+    final decorated = List.generate(subs.length, (i) => MapEntry(i, subs[i]));
+    decorated.sort((a, b) {
+      final aUsage = usageMap[a.value.categoryId] ?? 0;
+      final bUsage = usageMap[b.value.categoryId] ?? 0;
+      if (aUsage != bUsage) return bUsage.compareTo(aUsage);
+      // 次数相同：先按 sortOrder，再按原始下标
+      final aOrder = a.value.sortOrder;
+      final bOrder = b.value.sortOrder;
+      if (aOrder != bOrder) return aOrder.compareTo(bOrder);
+      return a.key.compareTo(b.key);
+    });
+    return decorated.map((e) => e.value).toList();
+  }
+
+  /// 记录分类使用次数（每次记账保存成功后调用）
+  /// [subCategoryId] 传入选中的小分类 id，小分类也会按次数排序。
+  /// [billType] 优先使用当前记账 Tab（expense/income/other），保证三个 Tab
+  /// 各自独立累计次数、按同一规则排序；不传时再按分类归属推断。
+  void recordUsage(String categoryId, {String? subCategoryId, String? billType}) {
+    final type = _resolveUsageType(categoryId, billType);
     if (type == null) return;
 
     _categoryUsage.putIfAbsent(type, () => {});
     _categoryUsage[type]![categoryId] = (_categoryUsage[type]![categoryId] ?? 0) + 1;
 
+    // 小分类使用次数：存在 "sub:<父分类id>" 命名空间下
+    if (subCategoryId != null && subCategoryId.isNotEmpty) {
+      final subKey = _subUsageKey(categoryId);
+      _categoryUsage.putIfAbsent(subKey, () => {});
+      _categoryUsage[subKey]![subCategoryId] =
+          (_categoryUsage[subKey]![subCategoryId] ?? 0) + 1;
+    }
+
+    // 立即按新次数重排，UI 无需重启即可看到顺序变化
+    _rebuildCategories();
+
     // 异步保存到数据库
     _saveOrderToDb();
   }
 
-  /// 根据分类ID判断属于哪种类型
-  String _getCategoryType(String categoryId) {
-    for (final cat in _expenseCategories) {
-      if (cat.id == categoryId) return 'expense';
+  /// 解析使用次数应记到哪个 Tab 桶
+  String? _resolveUsageType(String categoryId, String? billType) {
+    if (billType == 'expense' || billType == 'income' || billType == 'other') {
+      return billType;
+    }
+    // 兜底：按当前三个列表归属推断（其他优先，避免与支出重叠的历史 ID 记错桶）
+    for (final cat in _otherCategories) {
+      if (cat.id == categoryId) return 'other';
     }
     for (final cat in _incomeCategories) {
       if (cat.id == categoryId) return 'income';
     }
-    for (final cat in _otherCategories) {
-      if (cat.id == categoryId) return 'other';
+    for (final cat in _expenseCategories) {
+      if (cat.id == categoryId) return 'expense';
     }
-    return 'expense';
+    return null;
   }
 
   /// 更新分类排序顺序（拖拽排序后调用）

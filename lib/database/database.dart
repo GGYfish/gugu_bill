@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'package:decimal/decimal.dart';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import '../utils/money.dart';
 
 part 'database.g.dart';
 
@@ -40,6 +42,18 @@ class LocalUserConfig extends Table {
   TextColumn get categoryOrder => text().withDefault(const Constant('{}'))();
   // 分类使用次数（JSON: {"expense": {"food": 5, "shopping": 3}, "income": {"salary": 2}}）
   TextColumn get categoryUsage => text().withDefault(const Constant('{}'))();
+  // ===== AI 配置 =====
+  BoolColumn get aiEnabled => boolean().withDefault(const Constant(false))();
+  /// 接口地址，如 https://api.openai.com/v1 或 https://api.deepseek.com/v1
+  TextColumn get aiBaseUrl => text().withDefault(const Constant(''))();
+  TextColumn get aiApiKey => text().withDefault(const Constant(''))();
+  /// 模型名，如 gpt-4o-mini / deepseek-chat
+  TextColumn get aiModel => text().withDefault(const Constant(''))();
+  /// AI 性格：tease / gentle / serious / cute / coach
+  TextColumn get aiPersonality =>
+      text().withDefault(const Constant('tease'))();
+  /// AI 对用户的称谓，如「老板」「宝」「小明」
+  TextColumn get aiAppellation => text().withDefault(const Constant(''))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 }
@@ -166,6 +180,22 @@ class LocalCreditInstitutions extends Table {
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 }
 
+/// 咕咕鱼 AI 聊天历史
+@DataClassName('LocalAiChatMessageData')
+class LocalAiChatMessages extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  BoolColumn get isUser => boolean()();
+  /// 消息正文（不可命名 text，会与 Table.text 冲突）
+  TextColumn get content => text()();
+  TextColumn get stickerId => text().nullable()();
+  /// JSON 字符串数组，如 ["-¥18 餐饮"]
+  TextColumn get billLinesJson => text().withDefault(const Constant('[]'))();
+  BoolColumn get isError => boolean().withDefault(const Constant(false))();
+  /// 欢迎语等系统提示
+  BoolColumn get isSystem => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+}
+
 @DriftDatabase(tables: [
   OfflineSyncQueue,
   LocalUserConfig,
@@ -176,12 +206,13 @@ class LocalCreditInstitutions extends Table {
   LocalCategories,
   LocalBanks,
   LocalCreditInstitutions,
+  LocalAiChatMessages,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration {
@@ -232,7 +263,51 @@ class AppDatabase extends _$AppDatabase {
           // 从v5升级到v6：添加父分类ID字段支持大分类小分类
           await _addColumnIfNotExists('local_categories', 'parent_id', 'TEXT');
         }
-        
+        if (from < 7) {
+          // v7：补齐「自动记账」大分类（支出/收入）
+          await ensureAutoRecordParentCategories();
+        }
+        if (from < 8) {
+          // v8：AI 配置字段
+          await _addColumnIfNotExists(
+            'local_user_config',
+            'ai_enabled',
+            'INTEGER NOT NULL DEFAULT 0',
+          );
+          await _addColumnIfNotExists(
+            'local_user_config',
+            'ai_base_url',
+            "TEXT NOT NULL DEFAULT ''",
+          );
+          await _addColumnIfNotExists(
+            'local_user_config',
+            'ai_api_key',
+            "TEXT NOT NULL DEFAULT ''",
+          );
+          await _addColumnIfNotExists(
+            'local_user_config',
+            'ai_model',
+            "TEXT NOT NULL DEFAULT ''",
+          );
+        }
+        if (from < 9) {
+          await _addColumnIfNotExists(
+            'local_user_config',
+            'ai_personality',
+            "TEXT NOT NULL DEFAULT 'tease'",
+          );
+        }
+        if (from < 10) {
+          await m.createTable(localAiChatMessages);
+        }
+        if (from < 11) {
+          await _addColumnIfNotExists(
+            'local_user_config',
+            'ai_appellation',
+            "TEXT NOT NULL DEFAULT ''",
+          );
+        }
+
         // 确保分类数据存在（通用初始化逻辑）
         await _ensureCategoriesInitialized();
         await _ensureBanksInitialized();
@@ -254,8 +329,101 @@ class AppDatabase extends _$AppDatabase {
         // 有数据但没有子分类结构，需要重新初始化
         await delete(localCategories).go();
         await _initDefaultCategories();
+      } else {
+        await ensureAutoRecordParentCategories();
       }
     }
+  }
+
+  /// 确保「自动记账」大分类存在（支出 / 收入各一个）
+  Future<void> ensureAutoRecordParentCategories() async {
+    Future<void> ensureOne({
+      required String categoryId,
+      required String type,
+      required int sortOrder,
+    }) async {
+      final exists = await (select(localCategories)
+            ..where((t) => t.categoryId.equals(categoryId)))
+          .get();
+      if (exists.isNotEmpty) return;
+      await into(localCategories).insert(
+        LocalCategoriesCompanion(
+          categoryId: Value(categoryId),
+          name: const Value('自动记账'),
+          icon: const Value('auto_awesome'),
+          color: const Value('#7C4DFF'),
+          type: Value(type),
+          parentId: const Value(null),
+          sortOrder: Value(sortOrder),
+        ),
+      );
+    }
+
+    await ensureOne(
+      categoryId: 'auto_record',
+      type: 'expense',
+      sortOrder: 98,
+    );
+    await ensureOne(
+      categoryId: 'auto_record_income',
+      type: 'income',
+      sortOrder: 98,
+    );
+  }
+
+  /// 解析自动记账小分类：挂在「自动记账」大类下，按来源名查找，没有则创建
+  /// 返回 (categoryId, categoryName)
+  Future<({String categoryId, String categoryName})> resolveAutoRecordSubCategory({
+    required String sourceName,
+    required String billType,
+  }) async {
+    await ensureAutoRecordParentCategories();
+
+    final parentId =
+        billType == 'income' ? 'auto_record_income' : 'auto_record';
+    final name = sourceName.trim().isEmpty ? '未知来源' : sourceName.trim();
+
+    final existing = await (select(localCategories)
+          ..where((t) => t.parentId.equals(parentId) & t.name.equals(name)))
+        .get();
+    if (existing.isNotEmpty) {
+      return (
+        categoryId: existing.first.categoryId,
+        categoryName: existing.first.name,
+      );
+    }
+
+    final parent = await (select(localCategories)
+          ..where((t) => t.categoryId.equals(parentId)))
+        .getSingle();
+    final siblings = await (select(localCategories)
+          ..where((t) => t.parentId.equals(parentId)))
+        .get();
+    final sortOrder = siblings.length + 1;
+    final categoryId =
+        'auto_sub_${parentId}_${name.hashCode.toUnsigned(32).toRadixString(16)}';
+
+    // 若 id 已存在（极端情况），直接复用
+    final byId = await (select(localCategories)
+          ..where((t) => t.categoryId.equals(categoryId)))
+        .get();
+    if (byId.isNotEmpty) {
+      return (categoryId: byId.first.categoryId, categoryName: byId.first.name);
+    }
+
+    await into(localCategories).insert(
+      LocalCategoriesCompanion(
+        categoryId: Value(categoryId),
+        name: Value(name),
+        icon: Value(parent.icon),
+        color: Value(parent.color),
+        type: Value(parent.type),
+        parentId: Value(parentId),
+        sortOrder: Value(sortOrder),
+      ),
+    );
+
+    return (categoryId: categoryId, categoryName: name);
   }
 
   /// 确保银行数据已初始化
@@ -296,10 +464,13 @@ class AppDatabase extends _$AppDatabase {
       LocalCategoriesCompanion(categoryId: const Value('lend'), name: const Value('借出'), icon: const Value('person_remove'), color: const Value('#F38181'), type: const Value('expense'), parentId: const Value(null), sortOrder: const Value(15)),
       LocalCategoriesCompanion(categoryId: const Value('debt'), name: const Value('还债'), icon: const Value('credit_score'), color: const Value('#E74C3C'), type: const Value('expense'), parentId: const Value(null), sortOrder: const Value(16)),
       LocalCategoriesCompanion(categoryId: const Value('beauty'), name: const Value('美容'), icon: const Value('spa'), color: const Value('#FD79A8'), type: const Value('expense'), parentId: const Value(null), sortOrder: const Value(17)),
+      // 自动记账大分类（监听到的来源作为其子分类）
+      LocalCategoriesCompanion(categoryId: const Value('auto_record'), name: const Value('自动记账'), icon: const Value('auto_awesome'), color: const Value('#7C4DFF'), type: const Value('expense'), parentId: const Value(null), sortOrder: const Value(98)),
       // 收入大分类
       LocalCategoriesCompanion(categoryId: const Value('salary'), name: const Value('薪资'), icon: const Value('work'), color: const Value('#00B894'), type: const Value('income'), parentId: const Value(null), sortOrder: const Value(1)),
       LocalCategoriesCompanion(categoryId: const Value('invest_income'), name: const Value('理财'), icon: const Value('trending_up'), color: const Value('#0984E3'), type: const Value('income'), parentId: const Value(null), sortOrder: const Value(2)),
       LocalCategoriesCompanion(categoryId: const Value('other_income'), name: const Value('其他收入'), icon: const Value('attach_money'), color: const Value('#FDCB6E'), type: const Value('income'), parentId: const Value(null), sortOrder: const Value(99)),
+      LocalCategoriesCompanion(categoryId: const Value('auto_record_income'), name: const Value('自动记账'), icon: const Value('auto_awesome'), color: const Value('#7C4DFF'), type: const Value('income'), parentId: const Value(null), sortOrder: const Value(98)),
     ];
 
     // 小分类（parentId 指向父分类ID）
@@ -726,23 +897,28 @@ class AppDatabase extends _$AppDatabase {
 
   /// 首页汇总：今日支出 / 本月支出 / 本月收入
   /// 通过一个 trigger stream 监听 localBills 表变化，变化时重新聚合。
-  Stream<Map<String, double>> watchBillsSummary() {
+  /// 返回值统一为 Decimal 精确金额，避免 double 二进制浮点误差。
+  Stream<Map<String, Decimal>> watchBillsSummary() {
     // trigger：监听 localBills 任意变化
     final trigger = selectOnly(localBills)..addColumns([localBills.id.count()]);
     return trigger.watchSingle().asyncMap((_) => getBillsSummary());
   }
 
-  Future<double> _sumAmount({required String type, required DateTime after}) async {
+  /// SQL 的 SUM 先以 REAL 取出，再经 decimalOf 逐笔还原为 Decimal。
+  /// REAL 列存的是 2 位小数金额，SQL 加法有极小的二进制误差，
+  /// 这里用 round2 收敛到分，保证汇总与 Dart 层逐笔累加一致。
+  Future<Decimal> _sumAmount({required String type, required DateTime after}) async {
     final sumExp = localBills.amount.sum();
     final query = selectOnly(localBills)
       ..addColumns([sumExp])
       ..where(localBills.type.equals(type) & localBills.billTime.isBiggerOrEqualValue(after));
     final row = await query.getSingle();
-    return row.read(sumExp) ?? 0.0;
+    final raw = row.read(sumExp);
+    return raw == null ? Decimal.zero : round2(decimalOf(raw));
   }
 
   /// Future 版本：一次拿当前汇总（供主动 refresh）
-  Future<Map<String, double>> getBillsSummary() async {
+  Future<Map<String, Decimal>> getBillsSummary() async {
     final now = DateTime.now();
     final today0 = DateTime(now.year, now.month, now.day);
     final monthStart = DateTime(now.year, now.month, 1);
@@ -769,6 +945,35 @@ class AppDatabase extends _$AppDatabase {
     return into(localBills).insert(bill);
   }
 
+  /// 按 sourceHash 查是否已入账（自动记账防重复）
+  Future<LocalBillsData?> findBillBySourceHash(String sourceHash) {
+    return (select(localBills)
+          ..where((t) => t.sourceHash.equals(sourceHash))
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
+  /// 近期同渠道、同 App 分类名、同金额（备注偶发变化时的兜底去重）
+  Future<LocalBillsData?> findRecentSimilarAutoBill({
+    required String recordSource,
+    required String appSourceName,
+    required double amount,
+    required Duration within,
+  }) {
+    final since = DateTime.now().subtract(within);
+    return (select(localBills)
+          ..where(
+            (t) =>
+                t.source.equals(recordSource) &
+                t.categoryName.equals(appSourceName) &
+                t.amount.equals(amount) &
+                t.billTime.isBiggerOrEqualValue(since),
+          )
+          ..orderBy([(t) => OrderingTerm.desc(t.billTime)])
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
   Future<void> updateBill(String billId, LocalBillsCompanion bill) {
     return (update(localBills)..where((t) => t.billId.equals(billId)))
         .write(bill);
@@ -788,6 +993,13 @@ class AppDatabase extends _$AppDatabase {
     return (select(localLiabilities)
           ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
         .get();
+  }
+
+  Future<LocalLiabilitiesData?> getLiabilityById(String liabilityId) {
+    return (select(localLiabilities)
+          ..where((t) => t.liabilityId.equals(liabilityId))
+          ..limit(1))
+        .getSingleOrNull();
   }
 
   Future<int> insertLiability(LocalLiabilitiesCompanion liability) {
@@ -835,11 +1047,87 @@ class AppDatabase extends _$AppDatabase {
 
   Future<LocalUserConfigData?> getUserConfig() async {
     final results = await select(localUserConfig).get();
-    return results.isEmpty ? null : results.first;
+    if (results.isEmpty) return null;
+    if (results.length == 1) return results.first;
+
+    // 历史 bug：无 id 的 insertOnConflictUpdate 会不断插新行。
+    // 合并开关状态后只保留最新一行，避免每次进 App 开关又变回关闭。
+    results.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final keep = results.first;
+    final anyNotification =
+        results.any((r) => r.notificationAutoRecordEnabled);
+    final anyAccessibility =
+        results.any((r) => r.accessibilityAutoRecordEnabled);
+    final anySms = results.any((r) => r.smsListenEnabled);
+    final anyNotifListen = results.any((r) => r.notificationListenEnabled);
+
+    await (update(localUserConfig)..where((t) => t.id.equals(keep.id))).write(
+      LocalUserConfigCompanion(
+        notificationAutoRecordEnabled: Value(anyNotification),
+        accessibilityAutoRecordEnabled: Value(anyAccessibility),
+        smsListenEnabled: Value(anySms),
+        notificationListenEnabled: Value(anyNotifListen),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+    final duplicateIds =
+        results.skip(1).map((r) => r.id).toList(growable: false);
+    if (duplicateIds.isNotEmpty) {
+      await (delete(localUserConfig)..where((t) => t.id.isIn(duplicateIds)))
+          .go();
+    }
+    return (await (select(localUserConfig)
+          ..where((t) => t.id.equals(keep.id)))
+        .getSingleOrNull());
   }
 
-  Future<int> insertOrUpdateUserConfig(LocalUserConfigCompanion config) {
-    return into(localUserConfig).insertOnConflictUpdate(config);
+  /// 更新用户配置：始终改已有行；没有配置时才插入。
+  /// 注意：不可用无 id 的 insertOnConflictUpdate（自增主键不会冲突，会不断插新行）。
+  Future<int> insertOrUpdateUserConfig(LocalUserConfigCompanion config) async {
+    final existing = await getUserConfig();
+    if (existing != null) {
+      return (update(localUserConfig)..where((t) => t.id.equals(existing.id)))
+          .write(config);
+    }
+    return into(localUserConfig).insert(config);
+  }
+
+  /// 咕咕鱼 AI 聊天历史（按时间升序返回）。
+  /// - 不传 [beforeId]：取最新 [limit] 条
+  /// - 传 [beforeId]：取 id 更小（更早）的 [limit] 条，用于下拉加载
+  Future<List<LocalAiChatMessageData>> getAiChatMessages({
+    int limit = 50,
+    int? beforeId,
+  }) async {
+    final query = select(localAiChatMessages)
+      ..orderBy([(t) => OrderingTerm.desc(t.id)])
+      ..limit(limit);
+    if (beforeId != null) {
+      query.where((t) => t.id.isSmallerThanValue(beforeId));
+    }
+    final rows = await query.get();
+    return rows.reversed.toList();
+  }
+
+  Future<int> insertAiChatMessage(LocalAiChatMessagesCompanion message) async {
+    final id = await into(localAiChatMessages).insert(message);
+    // 控制体积：超出则删掉更早的，只留最近 500 条
+    final idCol = localAiChatMessages.id;
+    final idsDesc = await (selectOnly(localAiChatMessages)
+          ..addColumns([idCol])
+          ..orderBy([OrderingTerm.desc(idCol)]))
+        .map((row) => row.read(idCol)!)
+        .get();
+    if (idsDesc.length > 500) {
+      final removeIds = idsDesc.sublist(500);
+      await (delete(localAiChatMessages)..where((t) => t.id.isIn(removeIds)))
+          .go();
+    }
+    return id;
+  }
+
+  Future<int> clearAiChatMessages() {
+    return delete(localAiChatMessages).go();
   }
 
   /// 更新分类排序和使用次数
