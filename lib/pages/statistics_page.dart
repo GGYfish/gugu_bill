@@ -715,8 +715,17 @@ class _StatisticsPageState extends State<StatisticsPage>
             padding: const EdgeInsets.fromLTRB(16, 14, 12, 0),
             child: Row(
               children: [
-                _buildTimeSelector(provider),
-                const Spacer(),
+                Flexible(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: _buildTimeSelector(provider),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 _buildExpenseIncomeTabSwitch(),
               ],
             ),

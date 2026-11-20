@@ -1,9 +1,7 @@
 import 'package:decimal/decimal.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import '../providers/app_provider.dart';
 import '../providers/bill_provider.dart';
 import '../providers/category_provider.dart';
 import '../database/database.dart';
@@ -19,7 +17,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
+class _HomePageState extends State<HomePage> {
   bool _showAmount = true;
   final ScrollController _scrollController = ScrollController();
 
@@ -31,75 +29,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   OverlayEntry? _menuOverlay;
   Offset _menuPosition = Offset.zero;
 
-  /// 强制停止后引导弹窗：同一轮失效只弹一次，恢复后可再弹
-  bool _forceStopGuideShown = false;
-
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       // 进入首页时确保最新数据
       context.read<BillProvider>().refresh();
-      await context.read<AppProvider>().refreshPermissions();
-      if (mounted) _maybeShowForceStopGuide();
-    });
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted) {
-      context.read<AppProvider>().refreshPermissions().then((_) {
-        if (mounted) _maybeShowForceStopGuide();
-      });
-    }
-  }
-
-  void _maybeShowForceStopGuide() {
-    final app = context.read<AppProvider>();
-    final broken = app.needsAccessibilityReenable || app.needsNotificationReenable;
-    if (!broken) {
-      _forceStopGuideShown = false;
-      return;
-    }
-    if (_forceStopGuideShown) return;
-    _forceStopGuideShown = true;
-
-    final needA11y = app.needsAccessibilityReenable;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('自动记账已中断'),
-          content: Text(
-            needA11y
-                ? '检测到应用曾被强制停止或系统清理。'
-                    'Android 会关掉无障碍服务，无法自动恢复，需要您手动再开一次。\n\n'
-                    '点「去开启」进入无障碍设置，找到本应用重新打开开关。'
-                : '通知使用权已失效，自动记账无法继续。'
-                    '请重新授权通知使用权。',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('稍后'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                if (needA11y) {
-                  await app.openAccessibilitySettings();
-                } else {
-                  await app.openNotificationListenerSettings();
-                }
-              },
-              child: const Text('去开启'),
-            ),
-          ],
-        ),
-      );
     });
   }
 
@@ -114,7 +50,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _removeMenu();
     _scrollController.dispose();
     super.dispose();
@@ -347,9 +282,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       body: SafeArea(
         child: Column(
           children: [
-            // 固定头部：汇总卡片 + 自动记账状态（不参与列表滑动）
+            // 固定头部：汇总卡片（不参与列表滑动）
             if (!_isMultiSelectMode) _buildSummaryCard(),
-            if (!_isMultiSelectMode) _buildAutoRecordStatus(),
             // 账单列表：独立上下滑动
             Expanded(
               child: RefreshIndicator(
@@ -515,166 +449,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ),
         );
       },
-    );
-  }
-
-  Widget _buildAutoRecordStatus() {
-    if (defaultTargetPlatform != TargetPlatform.android) {
-      return const SizedBox.shrink();
-    }
-    return Consumer<AppProvider>(
-      builder: (context, app, _) {
-        final hasAccessibility = app.accessibilityPermissionGranted;
-        final hasNotification = app.notificationPermissionGranted;
-        final anyEnabled = app.anyAutoRecordEnabled;
-        final hasAnyPermission = hasAccessibility || hasNotification;
-        final needA11y = app.needsAccessibilityReenable;
-        final needNotif = app.needsNotificationReenable;
-
-        Color statusColor;
-        String statusText;
-        IconData statusIcon;
-
-        if (needA11y || needNotif) {
-          statusColor = Colors.red;
-          statusText = needA11y
-              ? '无障碍已被系统关闭（多为强制停止），点此重新开启'
-              : '通知使用权已失效，点此重新开启';
-          statusIcon = Icons.warning_amber;
-        } else if (!hasAnyPermission) {
-          statusColor = Colors.red;
-          statusText = '请授权通知使用权或无障碍以开启自动记账';
-          statusIcon = Icons.warning_amber;
-        } else if (!anyEnabled) {
-          statusColor = Colors.grey;
-          statusText = '自动记账未开启，点击设置开启';
-          statusIcon = Icons.auto_awesome_outlined;
-        } else {
-          statusColor = Colors.purple;
-          final modes = <String>[
-            if (app.notificationAutoRecordEnabled) '通知栏',
-            if (app.accessibilityAutoRecordEnabled) '无障碍',
-          ];
-          statusText = '自动记账已开启（${modes.join(' + ')}）';
-          statusIcon = Icons.auto_awesome;
-        }
-        
-        return GestureDetector(
-          onTap: () async {
-            if (needA11y) {
-              await app.openAccessibilitySettings();
-              return;
-            }
-            if (needNotif) {
-              await app.openNotificationListenerSettings();
-              return;
-            }
-            if (!context.mounted) return;
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SettingPage()),
-            );
-          },
-          child: Container(
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Icon(statusIcon, color: statusColor, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        statusText,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: statusColor,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          _buildPermissionBadge('通知栏', hasNotification),
-                          const SizedBox(width: 6),
-                          _buildPermissionBadge('无障碍', hasAccessibility),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                if (hasNotification && !app.notificationAutoRecordEnabled)
-                  _buildQuickToggle(
-                    icon: Icons.notifications_active,
-                    color: Colors.orange,
-                    tooltip: '开启通知栏记账',
-                    onPressed: () =>
-                        app.setNotificationAutoRecordEnabled(true),
-                  ),
-                if (hasAccessibility && !app.accessibilityAutoRecordEnabled)
-                  _buildQuickToggle(
-                    icon: Icons.accessibility_new,
-                    color: Colors.purple,
-                    tooltip: '开启无障碍记账',
-                    onPressed: () =>
-                        app.setAccessibilityAutoRecordEnabled(true),
-                  ),
-                Icon(Icons.chevron_right, color: Colors.grey[400], size: 20),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildQuickToggle({
-    required IconData icon,
-    required Color color,
-    required String tooltip,
-    required VoidCallback onPressed,
-  }) {
-    return IconButton(
-      icon: Icon(icon, color: color, size: 20),
-      onPressed: onPressed,
-      tooltip: tooltip,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(),
-    );
-  }
-
-  /// 构建权限状态徽章
-  Widget _buildPermissionBadge(String label, bool granted) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(
-        color: granted ? Colors.green.withValues(alpha: 0.2) : Colors.grey.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            granted ? Icons.check_circle : Icons.circle_outlined,
-            size: 10,
-            color: granted ? Colors.green : Colors.grey,
-          ),
-          const SizedBox(width: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              color: granted ? Colors.green[700] : Colors.grey[600],
-            ),
-          ),
-        ],
-      ),
     );
   }
 

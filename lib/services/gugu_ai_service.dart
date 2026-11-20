@@ -20,6 +20,8 @@ class AiBillDraft {
   final String parentCategory;
   final String? subCategory;
   final String? remark;
+  /// 消费/入账发生日期（来自 API；空则当天）
+  final DateTime? occurredAt;
 
   AiBillDraft({
     required this.type,
@@ -27,6 +29,7 @@ class AiBillDraft {
     required this.parentCategory,
     this.subCategory,
     this.remark,
+    this.occurredAt,
   });
 }
 
@@ -58,6 +61,8 @@ class AiRepayDraft {
   final Decimal? amount;
   final bool payAll;
   final String? remark;
+  /// 还款发生日期（来自 API；空则当天）
+  final DateTime? occurredAt;
 
   AiRepayDraft({
     this.liabilityId,
@@ -65,6 +70,7 @@ class AiRepayDraft {
     this.amount,
     this.payAll = false,
     this.remark,
+    this.occurredAt,
   });
 }
 
@@ -174,6 +180,7 @@ class GuguAiService {
       );
       categories = await _db.getAllCategories();
 
+      final billTime = draft.occurredAt ?? DateTime.now();
       final ok = await _billProvider.addBill(
         type: draft.type,
         amount: draft.amount,
@@ -181,14 +188,16 @@ class GuguAiService {
         categoryId: resolved.categoryId,
         categoryName: resolved.categoryName,
         remark: draft.remark,
+        billTime: billTime,
         source: 'ai',
       );
       if (ok) {
         final sign = draft.type == 'income' ? '+' : '-';
         final remarkPart =
             (draft.remark == null || draft.remark!.isEmpty) ? '' : '（${draft.remark}）';
+        final datePart = _dateLabel(billTime);
         summaries.add(
-          '$sign¥${formatMoney(draft.amount)} ${resolved.categoryName}$remarkPart',
+          '$sign¥${formatMoney(draft.amount)} ${resolved.categoryName}$remarkPart$datePart',
         );
       }
     }
@@ -255,15 +264,18 @@ class GuguAiService {
       }
 
       try {
+        final repayTime = draft.occurredAt ?? DateTime.now();
         await _liabilityProvider.addRepay(
           liabilityId: matched.liabilityId,
           amount: payAmount,
           accountId: 'cash',
+          repayTime: repayTime,
           remark: draft.remark ?? 'AI还债',
         );
         final cleared = payAmount >= remaining;
+        final datePart = _dateLabel(repayTime);
         summaries.add(
-          '还债 -¥${formatMoney(payAmount)} ${matched.name}${cleared ? '（已结清）' : ''}',
+          '还债 -¥${formatMoney(payAmount)} ${matched.name}${cleared ? '（已结清）' : ''}$datePart',
         );
         latestOpen = (await _db.getAllLiabilities())
             .where((l) => l.status == 0)
@@ -323,21 +335,29 @@ class GuguAiService {
     AiPersonality personality, {
     String liabilityCatalog = '',
   }) {
+    final now = DateTime.now();
+    final today =
+        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    const weeks = ['一', '二', '三', '四', '五', '六', '日'];
+    final weekday = weeks[now.weekday - 1];
+
     return '''
 你是「咕咕鱼」记账助手。reply 必须像该性格本人在说话，禁止中性客服腔、禁止五种性格混搭。
 【当前性格｜${personality.label}】请完整遵守下列全部细则（人设/节奏/用词/场景/正反例）：
 ${personality.prompt}
+
+【今天】$today（星期$weekday）。解析「昨天/前天/上周三/3月5日/上周」等相对日期时，必须以今天为基准换算成具体 YYYY-MM-DD，写入 JSON 的 date 字段。
 
 表达与输出要求：
 1. reply 严格贴合性格；优先模仿【正例】，远离【反例】。
 2. 贵贱必须结合「物品常识 + 价格」判断，禁止固定金额阈值（如 >300 就惊讶）；午饭贵可以惊讶，手机两千通常别当离谱。
 3. 禁止固定收尾口头禅，句式每次自然变化，避免人机复读。
 4. emoji 与 sticker 都按当场情绪/物品现选，禁止每条复用同一套；reply 里 emoji 可有可无。sticker 每次仍要给一个，且只能从：${AiSticker.promptList()}
-5. 记账/记负债/还债准确性优先：金额、分类、匹配错了比性格不到位更严重。
+5. 记账/记负债/还债准确性优先：金额、分类、日期、匹配错了比性格不到位更严重。
 6. 不要复述性格设定，只输出 JSON。
 
 【重要】用户每一句自然语言都会原样通过接口发给你；你必须自行理解并只返回 JSON 数据。
-本地不会用正则拆「欠债/还债」，结构化字段只能来自你的返回。
+本地不会用正则拆「欠债/还债/日期」，结构化字段只能来自你的返回。
 
 意图区分：
 - 普通花销/到账 → bills
@@ -346,11 +366,12 @@ ${personality.prompt}
 三者可同时出现。
 
 【正例】
-- 用户：「欠张三 2000」→ liabilities=[{type:personal,name:张三借款,amount:2000}]，bills=[]，repays=[]
-- 用户：「招行信用卡欠了 3500，每月 8 号还」→ liabilities=[{type:credit_card,name:招行信用卡,amount:3500,institution:招商银行,repay_day:8}]
-- 用户：「还张三 500」→ repays=[{liability_name:张三,amount:500}]（从下面负债目录匹配），liabilities=[]
-- 用户：「信用卡还清了」→ repays=[{liability_name:信用卡,pay_all:true}]
-- 用户：「午饭 28」→ bills=[{type:expense,amount:28,...}]，liabilities=[]，repays=[]
+- 用户：「欠张三 2000」→ liabilities=[{type:personal,name:张三借款,amount:2000,date:"$today"}]
+- 用户：「招行信用卡欠了 3500，每月 8 号还」→ liabilities 含 repay_day:8
+- 用户：「还张三 500」→ repays=[{liability_name:张三,amount:500,date:"$today"}]
+- 用户：「昨天午饭 28」→ bills=[{type:expense,amount:28,date:"昨天对应的YYYY-MM-DD",...}]
+- 用户：「3月1日还了信用卡 1000」→ repays date=当年或可推断年份的 03-01
+- 用户：「午饭 28」→ bills date=$today（未提日期默认今天）
 
 现有分类目录（优先复用，名称必须尽量一致；没有合适的才新建）：
 $catalog
@@ -370,7 +391,8 @@ $liabilityCatalog
       "amount": 数字,
       "parent_category": "大分类名称",
       "sub_category": "小分类名称，可空字符串",
-      "remark": "备注，可空"
+      "remark": "备注，可空",
+      "date": "YYYY-MM-DD，必填；未提日期用今天 $today"
     }
   ],
   "liabilities": [
@@ -380,7 +402,8 @@ $liabilityCatalog
       "amount": 数字,
       "institution": "银行或机构名，可空",
       "repay_day": 每月还款日1到31，可空数字,
-      "due_date": "YYYY-MM-DD，可空",
+      "due_date": "到期日 YYYY-MM-DD，可空",
+      "date": "借款/建账日期 YYYY-MM-DD，可空，默认今天",
       "remark": "备注，可空"
     }
   ],
@@ -390,6 +413,7 @@ $liabilityCatalog
       "liability_name": "要还的那笔名称/关键词，如张三、招行信用卡",
       "amount": 数字，还清时可空,
       "pay_all": false,
+      "date": "还款日 YYYY-MM-DD，必填；未提日期用今天 $today",
       "remark": "备注，可空"
     }
   ]
@@ -406,21 +430,61 @@ $liabilityCatalog
 8. 「还清/全部还了」→ pay_all=true；「还了 500」→ amount=500。
 9. 目录里没有匹配负债又要还债时：repays 仍可返回，但 reply 说明找不到，引导用户先记负债或说清楚名称。
 10. 禁止自行编造未在用户原话中出现的金额。
+11. date 必须是合法 YYYY-MM-DD；相对日期按【今天】换算；未提及日期一律填 $today；禁止把有明确日期的记录默认成今天。
 ''';
   }
 
   /// 把用户自然语言包装后传给接口，明确要求 AI 返回结构化数据
   String _wrapUserUtterance(String raw) {
+    final now = DateTime.now();
+    final today =
+        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     return '''
+【今天】$today
 【用户自然语言原话】
 $raw
 
-请只根据上面原话判断意图，并返回 JSON（必须包含 reply、sticker、bills、liabilities、repays 字段；没有的用空数组 []）。
-- 新欠债/借款/信用卡欠款等 → 填 liabilities
-- 还债/还款/还清 → 填 repays（对照系统提示里的未结清负债目录）
-- 普通消费/收入 → 填 bills
+请只根据上面原话判断意图，并返回 JSON（必须包含 reply、sticker、bills、liabilities、repays；没有的用空数组 []）。
+- 普通消费/收入 → bills（每笔必须有 date：YYYY-MM-DD）
+- 新欠债/借款 → liabilities
+- 还债/还款/还清 → repays（每笔必须有 date）
+相对日期（昨天/上周等）按【今天】换算；没提日期就用 $today。
 不要解释，不要 Markdown，只输出一个 JSON 对象。
 ''';
+  }
+
+  /// 非当天则在摘要里带日期，避免用户以为都记到今天
+  String _dateLabel(DateTime dt) {
+    final now = DateTime.now();
+    final d = DateTime(dt.year, dt.month, dt.day);
+    final t = DateTime(now.year, now.month, now.day);
+    if (d == t) return '';
+    if (d.year == t.year) return ' · ${d.month}月${d.day}日';
+    return ' · ${d.year}/${d.month}/${d.day}';
+  }
+
+  DateTime? _parseAiDate(dynamic raw) {
+    if (raw == null) return null;
+    final s = raw.toString().trim();
+    if (s.isEmpty) return null;
+    // 优先完整日期；带时间则保留时分，否则用当天正午减少时区边界问题
+    final parsed = DateTime.tryParse(s);
+    if (parsed != null) {
+      if (s.length <= 10) {
+        return DateTime(parsed.year, parsed.month, parsed.day, 12);
+      }
+      return parsed;
+    }
+    final m = RegExp(r'(\d{4})[-/年.](\d{1,2})[-/月.](\d{1,2})').firstMatch(s);
+    if (m != null) {
+      final y = int.tryParse(m.group(1)!);
+      final mo = int.tryParse(m.group(2)!);
+      final d = int.tryParse(m.group(3)!);
+      if (y != null && mo != null && d != null) {
+        return DateTime(y, mo, d, 12);
+      }
+    }
+    return null;
   }
 
   Future<String> _callDeepSeek({
@@ -546,6 +610,14 @@ $raw
             .trim();
         final remark = (item['remark'] ?? '').toString().trim();
         if (parent.isEmpty || amount <= Decimal.zero) continue;
+        final occurredAt = _parseAiDate(
+          item['date'] ??
+              item['bill_date'] ??
+              item['billDate'] ??
+              item['bill_time'] ??
+              item['billTime'] ??
+              item['time'],
+        );
         bills.add(
           AiBillDraft(
             type: type,
@@ -553,6 +625,7 @@ $raw
             parentCategory: parent,
             subCategory: sub.isEmpty ? null : sub,
             remark: remark.isEmpty ? null : remark,
+            occurredAt: occurredAt,
           ),
         );
       }
@@ -614,12 +687,22 @@ $raw
       // 允许只有名称：后续再报「没说还多少」
     }
 
+    final occurredAt = _parseAiDate(
+      item['date'] ??
+          item['repay_date'] ??
+          item['repayDate'] ??
+          item['repay_time'] ??
+          item['repayTime'] ??
+          item['time'],
+    );
+
     return AiRepayDraft(
       liabilityId: id.isEmpty ? null : id,
       liabilityName: name.isEmpty ? null : name,
       amount: amount,
       payAll: payAll,
       remark: remark.isEmpty ? null : remark,
+      occurredAt: occurredAt,
     );
   }
 

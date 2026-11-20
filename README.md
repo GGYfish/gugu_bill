@@ -10,6 +10,7 @@
 
 ## 目录
 
+- [界面预览](#界面预览)
 - [核心特性](#核心特性)
 - [技术栈](#技术栈)
 - [功能模块](#功能模块)
@@ -25,6 +26,18 @@
 - [Android 原生集成](#android-原生集成)
 - [业务约束](#业务约束)
 - [常见问题](#常见问题)
+
+---
+
+## 界面预览
+
+| 统计 | 负债 | 咕咕鱼 AI |
+|:---:|:---:|:---:|
+| ![统计](docs/screenshots/01_statistics.jpg) | ![负债](docs/screenshots/02_debt.jpg) | ![咕咕鱼 AI](docs/screenshots/03_gugu_ai.jpg) |
+
+| 记一笔 | 设置 |
+|:---:|:---:|
+| ![记一笔](docs/screenshots/04_record.jpg) | ![设置](docs/screenshots/05_settings.jpg) |
 
 ---
 
