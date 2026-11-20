@@ -31,13 +31,13 @@
 
 ## 界面预览
 
-| 统计 | 负债 | 咕咕鱼 AI |
+| 首页 | 记一笔 | 咕咕鱼 AI |
 |:---:|:---:|:---:|
-| ![统计](docs/screenshots/01_statistics.jpg) | ![负债](docs/screenshots/02_debt.jpg) | ![咕咕鱼 AI](docs/screenshots/03_gugu_ai.jpg) |
+| ![首页](docs/screenshots/00_home.jpg) | ![记一笔](docs/screenshots/04_record.jpg) | ![咕咕鱼 AI](docs/screenshots/03_gugu_ai.jpg) |
 
-| 记一笔 | 设置 |
-|:---:|:---:|
-| ![记一笔](docs/screenshots/04_record.jpg) | ![设置](docs/screenshots/05_settings.jpg) |
+| 负债 | 统计 | 设置 |
+|:---:|:---:|:---:|
+| ![负债](docs/screenshots/02_debt.jpg) | ![统计](docs/screenshots/01_statistics.jpg) | ![设置](docs/screenshots/05_settings.jpg) |
 
 ---
 
